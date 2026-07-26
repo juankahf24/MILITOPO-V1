@@ -1,5 +1,5 @@
 /* MILITOPO Orientación · V70 entrega offline garantizada de resultado y track */
-const MILITOPO_CACHE = "militopo-orientacion-v70-entrega-offline-track";
+const MILITOPO_CACHE = "militopo-v1-orientacion-v71-sync-verificable";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -37,7 +37,7 @@ self.addEventListener("activate", event => {
       try { await self.registration.navigationPreload.enable(); } catch (e) {}
     }
     const keys = await caches.keys();
-    await Promise.all(keys.filter(key => key.startsWith("militopo-orientacion-") && key !== MILITOPO_CACHE).map(key => caches.delete(key)));
+    await Promise.all(keys.filter(key => key.startsWith("militopo-v1-orientacion-") && key !== MILITOPO_CACHE).map(key => caches.delete(key)));
     await self.clients.claim();
   })());
 });
