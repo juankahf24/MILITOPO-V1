@@ -1,4 +1,4 @@
-name: Temporary Android emulator kit
+name: Temporary Android emulator kit split
 
 on:
   pull_request:
@@ -27,11 +27,57 @@ jobs:
           cp -a "$SDK/emulator" kit/
           cp -a "$SDK/system-images/android-29/default/x86_64" kit/system-images/android-29/default/
           printf 'sdk.dir=%s\n' "$SDK" > kit/source-sdk.txt
-          du -sh kit/* kit/system-images/android-29/default/x86_64 || true
-      - name: Upload emulator kit
+          tar -I 'zstd -10 -T0' -cf android-emulator-kit-api29.tar.zst kit
+          mkdir parts
+          split -b 240M -d -a 2 android-emulator-kit-api29.tar.zst parts/part-
+          sha256sum parts/part-* > parts/SHA256SUMS.txt
+          ls -lh parts
+      - name: Upload metadata
         uses: actions/upload-artifact@v4
         with:
-          name: android-emulator-kit-api29
-          path: kit
+          name: emulator-kit-metadata
+          path: parts/SHA256SUMS.txt
           if-no-files-found: error
+          retention-days: 1
+      - name: Upload part 00
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-kit-part-00
+          path: parts/part-00
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload part 01
+        if: ${{ hashFiles('parts/part-01') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-kit-part-01
+          path: parts/part-01
+          retention-days: 1
+      - name: Upload part 02
+        if: ${{ hashFiles('parts/part-02') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-kit-part-02
+          path: parts/part-02
+          retention-days: 1
+      - name: Upload part 03
+        if: ${{ hashFiles('parts/part-03') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-kit-part-03
+          path: parts/part-03
+          retention-days: 1
+      - name: Upload part 04
+        if: ${{ hashFiles('parts/part-04') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-kit-part-04
+          path: parts/part-04
+          retention-days: 1
+      - name: Upload part 05
+        if: ${{ hashFiles('parts/part-05') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-kit-part-05
+          path: parts/part-05
           retention-days: 1
