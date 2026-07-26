@@ -1,11 +1,11 @@
 (() => {
   "use strict";
-  const EVENT_KEY = "militopo_participant_app_event_v1";
-  const EVENT_BACKUP_KEY = "militopo_participant_app_event_backup_v1";
-  const RUN_STATE_KEY = "militopo_participant_app_run_state_v1";
-  const SNAPSHOT_KEY = "militopo_participant_app_snapshot_v1";
-  const PERMANENT_EVENT_KEY = "militopo_participant_permanent_event_v2";
-  const PERMANENT_SNAPSHOT_KEY = "militopo_participant_permanent_snapshot_v2";
+  const EVENT_KEY = "militopo_v1_participant_app_event_v1";
+  const EVENT_BACKUP_KEY = "militopo_v1_participant_app_event_backup_v1";
+  const RUN_STATE_KEY = "militopo_v1_participant_app_run_state_v1";
+  const SNAPSHOT_KEY = "militopo_v1_participant_app_snapshot_v1";
+  const PERMANENT_EVENT_KEY = "militopo_v1_participant_permanent_event_v2";
+  const PERMANENT_SNAPSHOT_KEY = "militopo_v1_participant_permanent_snapshot_v2";
   let cameraFrameRestore = null;
   const MODE_QUERY = "modo=participante";
   const frame = document.getElementById("participantFrame");
@@ -15,7 +15,7 @@
   let deferredInstallPrompt = null;
   let runnerTemplate = "";
 
-  const PARTICIPANT_IDB_NAME="MILITOPO_PARTICIPANTE_DB_V1";
+  const PARTICIPANT_IDB_NAME="MILITOPO_V1_PARTICIPANTE_DB_V1";
   const PARTICIPANT_IDB_STORE="estado";
   async function shellIdbGet(key){
     try{
@@ -88,7 +88,7 @@
       try{
         for(let i=0;i<storage.length;i++){
           const key=storage.key(i)||"";
-          if(!/militopo/i.test(key))continue;
+          if(!/militopo_v1/i.test(key))continue;
           const raw=storage.getItem(key); if(!raw)continue;
           try{pushValue(JSON.parse(raw));}catch(_){ }
         }
@@ -97,8 +97,8 @@
     scanStorage(localStorage); scanStorage(sessionStorage);
     try{
       const raw=String(window.name||"");
-      if(raw.startsWith("MILITOPO_PARTICIPANT_SNAPSHOT:"))pushValue(JSON.parse(raw.slice("MILITOPO_PARTICIPANT_SNAPSHOT:".length)));
-      if(raw.startsWith("MILITOPO_RUN_BACKUP:"))pushValue(JSON.parse(raw.slice("MILITOPO_RUN_BACKUP:".length)));
+      if(raw.startsWith("MILITOPO_V1_PARTICIPANT_SNAPSHOT:"))pushValue(JSON.parse(raw.slice("MILITOPO_V1_PARTICIPANT_SNAPSHOT:".length)));
+      if(raw.startsWith("MILITOPO_V1_RUN_BACKUP:"))pushValue(JSON.parse(raw.slice("MILITOPO_V1_RUN_BACKUP:".length)));
     }catch(_){ }
     return found;
   }
@@ -178,9 +178,9 @@
       writeStorageEverywhere(EVENT_BACKUP_KEY,raw);
       writeStorageEverywhere(PERMANENT_EVENT_KEY,JSON.stringify({savedAt:snapshot.savedAt,eventData}));
       writeStorageEverywhere(PERMANENT_SNAPSHOT_KEY,raw);
-      writeStorageEverywhere("militopo_participante_recorrido_activo_v1",raw);
-      writeStorageEverywhere("militopo_participante_recorrido_rescate_v1",raw);
-      try{window.name="MILITOPO_PARTICIPANT_SNAPSHOT:"+raw}catch(_){ }
+      writeStorageEverywhere("militopo_v1_participante_recorrido_activo_v1",raw);
+      writeStorageEverywhere("militopo_v1_participante_recorrido_rescate_v1",raw);
+      try{window.name="MILITOPO_V1_PARTICIPANT_SNAPSHOT:"+raw}catch(_){ }
       writeUrlSnapshot(snapshot);
       return true;
     }catch(_){return false}
@@ -192,10 +192,10 @@
   }
   function readSavedEventData(){
     const candidates=[];
-    [SNAPSHOT_KEY,EVENT_KEY,EVENT_BACKUP_KEY,PERMANENT_EVENT_KEY,PERMANENT_SNAPSHOT_KEY,"militopo_participante_recorrido_activo_v1","militopo_participante_recorrido_rescate_v1"].forEach(key=>candidates.push(...readStorageEverywhere(key)));
+    [SNAPSHOT_KEY,EVENT_KEY,EVENT_BACKUP_KEY,PERMANENT_EVENT_KEY,PERMANENT_SNAPSHOT_KEY,"militopo_v1_participante_recorrido_activo_v1","militopo_v1_participante_recorrido_rescate_v1"].forEach(key=>candidates.push(...readStorageEverywhere(key)));
     try{
       const raw=String(window.name||"");
-      if(raw.startsWith("MILITOPO_PARTICIPANT_SNAPSHOT:"))candidates.push(raw.slice("MILITOPO_PARTICIPANT_SNAPSHOT:".length));
+      if(raw.startsWith("MILITOPO_V1_PARTICIPANT_SNAPSHOT:"))candidates.push(raw.slice("MILITOPO_V1_PARTICIPANT_SNAPSHOT:".length));
     }catch(_){ }
     candidates.push(...collectAllParticipantSnapshots().map(value=>{try{return JSON.stringify(value)}catch(_){return null}}));
     const valid=[];
@@ -210,10 +210,10 @@
     const candidates=[];
     const urlLog=readUrlLog();
     if(urlLog)candidates.push(JSON.stringify(urlLog));
-    [RUN_STATE_KEY,SNAPSHOT_KEY,EVENT_KEY,EVENT_BACKUP_KEY,PERMANENT_SNAPSHOT_KEY,"militopo_participante_recorrido_activo_v1","militopo_participante_recorrido_rescate_v1"].forEach(key=>candidates.push(...readStorageEverywhere(key)));
+    [RUN_STATE_KEY,SNAPSHOT_KEY,EVENT_KEY,EVENT_BACKUP_KEY,PERMANENT_SNAPSHOT_KEY,"militopo_v1_participante_recorrido_activo_v1","militopo_v1_participante_recorrido_rescate_v1"].forEach(key=>candidates.push(...readStorageEverywhere(key)));
     try{
       const raw=String(window.name||"");
-      if(raw.startsWith("MILITOPO_PARTICIPANT_SNAPSHOT:"))candidates.push(raw.slice("MILITOPO_PARTICIPANT_SNAPSHOT:".length));
+      if(raw.startsWith("MILITOPO_V1_PARTICIPANT_SNAPSHOT:"))candidates.push(raw.slice("MILITOPO_V1_PARTICIPANT_SNAPSHOT:".length));
     }catch(_){ }
     candidates.push(...collectAllParticipantSnapshots().map(value=>{try{return JSON.stringify(value)}catch(_){return null}}));
     const valid=[];
@@ -243,13 +243,13 @@
     return data;
   }
   function safeJsonForScript(data){return JSON.stringify(data||emptyEventData()).replace(/<\/script/gi,"<\\/script").replace(/<!--/g,"<\\!--");}
-  const BOOT_KEY = "militopo_participant_boot_payload_v3";
+  const BOOT_KEY = "militopo_v1_participant_boot_payload_v3";
   function saveBootPayload(eventData, log){
     try{
       const payload={savedAt:new Date().toISOString(),eventData:eventData||emptyEventData(),log:compactRunLogForStorage(log)||null};
       const raw=JSON.stringify(payload);
       writeStorageEverywhere(BOOT_KEY,raw);
-      writeStorageEverywhere("militopo_participant_boot_payload_latest",raw);
+      writeStorageEverywhere("militopo_v1_participant_boot_payload_latest",raw);
       return true;
     }catch(_){return false;}
   }
@@ -266,7 +266,7 @@
       frame.style.height=Math.max(window.innerHeight||0,720)+"px";
       frame.style.minHeight=Math.max(window.innerHeight||0,720)+"px";
       frame.removeAttribute("srcdoc");
-      const url="runner.html?app=1&v=v70-entrega-offline-track#boot";
+      const url="runner.html?app=1&v=v71-sync-verificable#boot";
       frame.addEventListener("load",()=>loading?.classList.add("is-hidden"),{once:true});
       frame.src=url;
     }catch(error){
@@ -281,7 +281,7 @@
   }
   function cleanParticipantQueue(eventId,participantId){
     try{
-      const key="militopo_live_v2_pending_events",queue=JSON.parse(localStorage.getItem(key)||"[]");if(!Array.isArray(queue))return;
+      const key="militopo_v1_live_v2_pending_events",queue=JSON.parse(localStorage.getItem(key)||"[]");if(!Array.isArray(queue))return;
       const eventKey=safeFirebaseKey(eventId),pid=String(participantId||"");
       const keep=queue.filter(item=>!(String(item?.eventKey||"")===eventKey&&String(item?.participantId||"")===pid));
       keep.length?localStorage.setItem(key,JSON.stringify(keep)):localStorage.removeItem(key);
@@ -289,15 +289,28 @@
   }
   async function clearParticipantDataAndCache(payload={},hard=false){
     if(!navigator.onLine){toast("Conéctate a internet antes de borrar la caché completa.");return false;}
+    const idbSnapshot=await recoverSnapshotFromIndexedDb().catch(()=>null);
+    const savedRun=readSavedRunState()||idbSnapshot?.log||null;
+    const hasStarted=!!savedRun?.startTime;
+    const deliveryConfirmed=!!(savedRun?.deliveryConfirmed?.result&&savedRun?.deliveryConfirmed?.track);
+    if((payload?.inProgress||hasStarted&&!savedRun?.finishTime)){
+      toast("Borrado bloqueado: la carrera todavía está en curso.");
+      return false;
+    }
+    if(hasStarted&&payload?.safeToReset!==true&&!deliveryConfirmed){
+      toast("Borrado bloqueado hasta confirmar resultado y track.");
+      try{await (window.MILITOPO_LIVE_PHASE2?.retryParticipantSync?.()||window.MILITOPO_LIVE_PHASE2?.flushParticipantQueue?.());}catch(_){}
+      return false;
+    }
     try{frame.srcdoc="<!doctype html><body style='margin:0;background:#10190b;color:#f5e6c8;font-family:monospace;display:grid;place-items:center;height:100vh'>Restableciendo…</body>";}catch(_){ }
     cleanParticipantQueue(payload.eventId,currentEventData?.webParticipantId||payload.participantId);
-    const prefixes=["militopo_runner_","militopo_participant_app_run_state_v1","militopo_participant_gps_enabled_v1:","militopo_participant_gps_lock_v1:","militopo_live_v2_last_sync_","militopo_participant_app_","militopo_participant_boot_payload_","militopo_participant_web_event_v1","militopo_jsqr_cache_v1"];
-    const exact=new Set([EVENT_KEY,EVENT_BACKUP_KEY,RUN_STATE_KEY,SNAPSHOT_KEY,"militopo_live_v2_participant_context","militopo_participant_web_event_v1","militopo_jsqr_cache_v1"]);
+    const prefixes=["militopo_v1_runner_","militopo_v1_participant_app_run_state_v1","militopo_v1_participant_gps_enabled_v1:","militopo_v1_participant_gps_lock_v1:","militopo_v1_live_v2_last_sync_","militopo_v1_participant_app_","militopo_v1_participant_boot_payload_","militopo_v1_participant_web_event_v1","militopo_v1_jsqr_cache_v1"];
+    const exact=new Set([EVENT_KEY,EVENT_BACKUP_KEY,RUN_STATE_KEY,SNAPSHOT_KEY,"militopo_v1_live_v2_participant_context","militopo_v1_participant_web_event_v1","militopo_v1_jsqr_cache_v1"]);
     const predicate=key=>exact.has(key)||prefixes.some(prefix=>String(key).startsWith(prefix));
     removeMatchingStorage(localStorage,predicate);removeMatchingStorage(sessionStorage,predicate);
     try{window.name=""}catch(_){ }
-    if("caches" in window){const names=await caches.keys();await Promise.all(names.filter(name=>name.startsWith("militopo-participante-")).map(name=>caches.delete(name)));}
-    if("indexedDB" in window&&indexedDB.databases){try{const dbs=await indexedDB.databases();for(const db of dbs){if(/militopo|participant|participante/i.test(String(db.name||"")))indexedDB.deleteDatabase(db.name);}}catch(_){ }}
+    if("caches" in window){const names=await caches.keys();await Promise.all(names.filter(name=>name.startsWith("militopo-v1-participante-")).map(name=>caches.delete(name)));}
+    if("indexedDB" in window&&indexedDB.databases){try{const dbs=await indexedDB.databases();for(const db of dbs){if(/^MILITOPO_V1_/i.test(String(db.name||"")))indexedDB.deleteDatabase(db.name);}}catch(_){ }}
     if("serviceWorker" in navigator){try{const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.filter(reg=>new URL(reg.scope).pathname.includes("/orientacion/participante/")).map(reg=>reg.unregister()));}catch(_){ }}
     location.replace("./?modo=participante&fresh="+Date.now());
     return true;
@@ -311,6 +324,8 @@
     if(resetPayload.inProgress)warnings.push("La carrera todavía está en curso.");
     if(Number(resetPayload.pendingSync||0)>0)warnings.push(`Hay ${resetPayload.pendingSync} cambio${resetPayload.pendingSync===1?"":"s"} pendiente${resetPayload.pendingSync===1?"":"s"} de sincronizar.`);
     if(resetPayload.pendingResultSync)warnings.push("El resultado final todavía está pendiente de envío o confirmación.");
+    if(resetPayload.pendingTrackSync)warnings.push("El track GPS completo todavía está pendiente de confirmación.");
+    if(resetPayload.safeToReset!==true&&resetPayload.finishTime)warnings.push("El borrado permanecerá bloqueado hasta recibir las dos confirmaciones.");
     warning.textContent=warnings.join(" ");
     document.getElementById("retrySyncBtn").hidden=Number(resetPayload.pendingSync||0)===0;
     document.getElementById("showResultBtn").hidden=!resetPayload.resultCode;
@@ -431,10 +446,21 @@
     document.getElementById("backupResultText").value=String(resetPayload?.resultCode||"");closeDialog(document.getElementById("resetDialog"));openDialog("resultBackupDialog");
   });
   document.getElementById("copyBackupResultBtn")?.addEventListener("click",async()=>{const value=document.getElementById("backupResultText").value;try{await navigator.clipboard.writeText(value);toast("Código copiado")}catch(_){document.getElementById("backupResultText").select();document.execCommand("copy");toast("Código copiado")}});
-  document.getElementById("confirmResetBtn")?.addEventListener("click",()=>clearParticipantDataAndCache(resetPayload));
-  document.getElementById("hardResetBtn")?.addEventListener("click",()=>{closeDialog(document.getElementById("shellMenu"));showResetDialog({eventId:currentEventData?.eventId||"",participantId:currentEventData?.webParticipantId||"",routeId:currentEventData?.routes?.[0]?.routeId||"",completedControls:0,totalControls:currentEventData?.routes?.[0]?.points?.length||0});});
+  document.getElementById("confirmResetBtn")?.addEventListener("click",()=>{
+    if(resetPayload?.safeToReset!==true){
+      toast(resetPayload?.inProgress?"No se puede borrar durante la carrera.":"Espera a que resultado y track estén confirmados.");
+      return;
+    }
+    clearParticipantDataAndCache(resetPayload);
+  });
+  document.getElementById("hardResetBtn")?.addEventListener("click",()=>{
+    closeDialog(document.getElementById("shellMenu"));
+    const saved=readSavedRunState();
+    const confirmed=!!(saved?.deliveryConfirmed?.result&&saved?.deliveryConfirmed?.track);
+    showResetDialog({eventId:currentEventData?.eventId||"",participantId:currentEventData?.webParticipantId||saved?.participantId||"",routeId:saved?.routeId||currentEventData?.routes?.[0]?.routeId||"",completedControls:Array.isArray(saved?.scans)?saved.scans.filter(scan=>scan?.status==="correct").length:0,totalControls:currentEventData?.routes?.[0]?.points?.filter(point=>point!=="START"&&point!=="FINISH").length||0,inProgress:!!(saved?.startTime&&!saved?.finishTime),finishTime:saved?.finishTime||null,pendingTrackSync:!!(saved?.finishTime&&!confirmed),pendingResultSync:!!(saved?.finishTime&&!confirmed),safeToReset:!saved?.startTime||confirmed});
+  });
 
-  try{sessionStorage.setItem("militopo_participant_app_scope_v1","1")}catch(_){ }
+  try{sessionStorage.setItem("militopo_v1_participant_app_scope_v1","1")}catch(_){ }
   setupInstallGuide();
   loadRunner();
 

@@ -1,4 +1,4 @@
-/* MILITOPO LIVE · V70 entrega offline garantizada de resultado y track
+/* MILITOPO LIVE · V71 sincronización offline verificable
    Sincronización automática de salida, controles, llegada y resultado.
    El organizador recibe e importa el ORI|RESULT sin escanearlo.
    El QR final y el código manual permanecen como respaldo. */
@@ -41,14 +41,16 @@ const firebaseConfig = {
 };
 
 const ROOT_PATH = "militopoLive/v2";
-const QUEUE_KEY = "militopo_live_v2_pending_events";
-const PARTICIPANT_CONTEXT_KEY = "militopo_live_v2_participant_context";
-const ORGANIZER_RUN_KEY_PREFIX = "militopo_live_v2_organizer_run_";
-const AUTO_IMPORT_KEY_PREFIX = "militopo_live_v2_auto_import_";
-const PARTICIPANT_LAST_SYNC_KEY_PREFIX = "militopo_live_v2_last_sync_";
-const TRACK_OUTBOX_DB = "MILITOPO_LIVE_TRACK_OUTBOX_V1";
+const QUEUE_KEY = "militopo_v1_live_v2_pending_events";
+const PARTICIPANT_CONTEXT_KEY = "militopo_v1_live_v2_participant_context";
+const ORGANIZER_RUN_KEY_PREFIX = "militopo_v1_live_v2_organizer_run_";
+const AUTO_IMPORT_KEY_PREFIX = "militopo_v1_live_v2_auto_import_";
+const PARTICIPANT_LAST_SYNC_KEY_PREFIX = "militopo_v1_live_v2_last_sync_";
+const TRACK_OUTBOX_DB = "MILITOPO_V1_LIVE_TRACK_OUTBOX_V1";
 const TRACK_OUTBOX_STORE = "bundles";
 const TRACK_UPLOAD_CHUNK_SIZE = 100;
+const ORGANIZER_TRACK_VAULT_DB = "MILITOPO_V1_ORGANIZER_TRACK_VAULT_V1";
+const ORGANIZER_TRACK_VAULT_STORE = "tracks";
 
 let app = null;
 let auth = null;
@@ -58,6 +60,7 @@ let firebaseConnected = false;
 
 let organizerEventKey = "";
 let organizerRunId = "";
+let organizerRunStatus = "";
 let organizerUnsubActive = null;
 let organizerUnsubParticipants = null;
 let organizerContextTimer = null;
@@ -88,7 +91,10 @@ let participantPendingTrackCount = 0;
 let participantRunResolvePromise = null;
 let organizerAutoImportTimer = null;
 let organizerLatestRows = [];
+const organizerTrackMemory = new Map();
+const organizerTrackHydrationBusy = new Set();
 let organizerSort = { key: "default", direction: "asc" };
+let participantStorageError = "";
 
 const $ = id => document.getElementById(id);
 
@@ -112,6 +118,27 @@ function safeFirebaseKey(value) {
 }
 
 function nowIso() { return new Date().toISOString(); }
+
+function stableTrackDigest(points) {
+  const rows = Array.isArray(points) ? points : [];
+  let hash = 2166136261;
+  const feed = value => {
+    const text = String(value ?? "");
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    hash ^= 124;
+    hash = Math.imul(hash, 16777619);
+  };
+  rows.forEach(point => {
+    feed(point?.timestamp || point?.time || "");
+    feed(Number(point?.lat ?? point?.latitude).toFixed(7));
+    feed(Number(point?.lon ?? point?.lng ?? point?.longitude).toFixed(7));
+    feed(point?.event || "");
+  });
+  return `${rows.length}-${(hash >>> 0).toString(36)}`;
+}
 
 function participantLastSyncKey(ctx = participantContext) {
   if (!ctx?.eventId || !ctx?.participantId) return "";
@@ -167,9 +194,10 @@ function injectStyles() {
     .militopo-live2-statuses{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.militopo-live2-badge{padding:9px 8px;border-radius:14px;text-align:center;font-size:.68rem;font-weight:900;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}.militopo-live2-badge[data-state="ok"]{color:#dff6c4;border-color:rgba(139,181,106,.42);background:rgba(107,140,62,.16)}.militopo-live2-badge[data-state="error"]{color:#ffd5ca;border-color:rgba(221,92,67,.42);background:rgba(151,49,34,.16)}.militopo-live2-badge[data-state="warn"]{color:#ffe4a6;border-color:rgba(230,188,122,.38);background:rgba(151,103,34,.14)}
     .militopo-live2-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.militopo-live2-actions button{min-height:50px;border-radius:17px;padding:11px 14px;font-weight:900;font-size:.78rem;cursor:pointer}.militopo-live2-actions button:disabled{opacity:.45;cursor:not-allowed}.militopo-live2-start{border:0;background:linear-gradient(180deg,#9dce6b,#6c9f45);color:#17220f}.militopo-live2-stop{border:1px solid rgba(225,104,80,.44);background:rgba(157,56,39,.18);color:#ffe0d8}
     .militopo-live2-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:14px 0}.militopo-live2-metric{padding:11px 7px;border-radius:16px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075);text-align:center}.militopo-live2-metric strong{display:block;font-size:1.1rem}.militopo-live2-metric span{display:block;margin-top:3px;font-size:.59rem;color:rgba(255,247,232,.62)}
+    .militopo-live2-delivery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px}.militopo-live2-delivery div{padding:10px;border-radius:15px;text-align:center;font-size:.66rem;font-weight:900;border:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.16)}.militopo-live2-delivery strong{display:block;font-size:1rem;margin-bottom:2px}.militopo-live2-delivery .ok{color:#dff6c4;border-color:rgba(139,181,106,.38)}.militopo-live2-delivery .wait{color:#ffe4a6;border-color:rgba(230,188,122,.38)}
     .militopo-live2-run{margin-top:11px;padding:10px 12px;border-radius:15px;background:rgba(0,0,0,.16);font-size:.69rem;line-height:1.45;word-break:break-word}.militopo-live2-message{margin-top:10px;padding:10px 12px;border-radius:14px;font-size:.7rem;line-height:1.4;background:rgba(255,255,255,.05)}.militopo-live2-message.is-ok{color:#dff6c4}.militopo-live2-message.is-error{color:#ffd0c5}.militopo-live2-message.is-warn{color:#ffe0a0}
     .militopo-live2-table-wrap{margin-top:14px;overflow-x:auto;border-radius:18px;border:1px solid rgba(237,214,145,.16);scrollbar-width:thin}.militopo-live2-table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:850px;background:rgba(0,0,0,.12)}.militopo-live2-table th,.militopo-live2-table td{padding:7px 5px;border-bottom:1px solid rgba(237,214,145,.12);text-align:left;font-size:.63rem;line-height:1.18;vertical-align:middle;overflow:hidden}.militopo-live2-table th{color:#ffe2a0;font-size:.57rem;letter-spacing:.035em;text-transform:uppercase;background:rgba(0,0,0,.18);position:sticky;top:0;white-space:normal;overflow-wrap:normal;word-break:normal}.militopo-live2-th-nowrap{white-space:nowrap!important}.militopo-live2-th-two-lines{white-space:normal!important}.militopo-live2-th-two-lines span{display:block;white-space:nowrap}.militopo-live2-sortable{cursor:pointer;user-select:none;touch-action:manipulation}.militopo-live2-sortable>span.militopo-live2-sort-label{display:inline-flex;align-items:center;justify-content:center;gap:4px;max-width:100%}.militopo-live2-sortable .militopo-live2-sort-arrow{display:inline-block;min-width:10px;font-size:.62rem;line-height:1;color:rgba(255,226,160,.48)}.militopo-live2-sortable[aria-sort="ascending"] .militopo-live2-sort-arrow,.militopo-live2-sortable[aria-sort="descending"] .militopo-live2-sort-arrow{color:#fff3c8}.militopo-live2-sortable:focus-visible{outline:2px solid rgba(255,226,160,.8);outline-offset:-2px}.militopo-live2-table th:not(:first-child),.militopo-live2-table td:not(:first-child){text-align:center}.militopo-live2-name{min-width:0}.militopo-live2-name b{display:block;color:#fff7e8;font-size:.69rem;line-height:1.15;white-space:normal;overflow-wrap:anywhere}.militopo-live2-name small{display:flex;align-items:center;gap:4px;color:#cbb894;margin-top:3px;min-width:0;flex-wrap:wrap}.militopo-live2-route-tag{display:inline-flex;padding:1px 5px;border-radius:999px;background:rgba(230,188,122,.12);border:1px solid rgba(230,188,122,.20);color:#ffe2a0;font-weight:900}.militopo-live2-time{white-space:nowrap;font-variant-numeric:tabular-nums;font-size:.60rem}.militopo-live2-time.is-running{color:#d5edff;font-weight:900}.militopo-live2-time.is-finished{color:#eaffd8;font-weight:900}.militopo-live2-state{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:4px 6px;border-radius:999px;font-weight:900;font-size:.55rem;line-height:1.05;white-space:normal;overflow-wrap:anywhere;text-align:center;border:1px solid rgba(255,255,255,.12)}.militopo-live2-state.ready,.militopo-live2-state.not_started{color:#ffe2a0;background:rgba(230,188,122,.12)}.militopo-live2-state.racing{color:#d5edff;background:rgba(70,139,206,.15);border-color:rgba(93,168,255,.36)}.militopo-live2-state.finished{color:#eaffd8;background:rgba(107,140,62,.18);border-color:rgba(139,181,106,.42)}.militopo-live2-state.offline{color:#ffd7ce;background:rgba(151,49,34,.15)}.militopo-live2-state.imported{color:#eaffd8;background:rgba(74,135,52,.24);border-color:rgba(157,220,108,.55)}.militopo-live2-progress{font-weight:900;color:#fff7e8}.militopo-live2-empty{padding:18px;text-align:center;color:rgba(255,247,232,.65);font-size:.75rem}
-    @media(max-width:680px){.militopo-live2-panel{padding:15px;border-radius:24px}.militopo-live2-statuses{grid-template-columns:1fr}.militopo-live2-actions{grid-template-columns:1fr}.militopo-live2-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.militopo-live2-head{align-items:center}.militopo-live2-phase{font-size:.56rem}}
+    @media(max-width:680px){.militopo-live2-panel{padding:15px;border-radius:24px}.militopo-live2-statuses{grid-template-columns:1fr}.militopo-live2-actions{grid-template-columns:1fr}.militopo-live2-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.militopo-live2-delivery{grid-template-columns:1fr}.militopo-live2-head{align-items:center}.militopo-live2-phase{font-size:.56rem}}
   `;
   document.head.appendChild(style);
 }
@@ -201,10 +229,15 @@ function buildOrganizerPanel() {
       <div class="militopo-live2-metric"><strong id="live2Racing">0</strong><span>EN CARRERA</span></div>
       <div class="militopo-live2-metric"><strong id="live2Finished">0</strong><span>FINALIZADOS</span></div>
     </div>
+    <div class="militopo-live2-delivery">
+      <div id="live2ResultsDelivery" class="wait"><strong>0 / 0</strong>RESULTADOS RECIBIDOS</div>
+      <div id="live2TracksDelivery" class="wait"><strong>0 / 0</strong>TRACKS COMPLETOS</div>
+      <div id="live2PendingDelivery" class="ok"><strong>0</strong>ENTREGAS PENDIENTES</div>
+    </div>
     <div id="live2RunText" class="militopo-live2-run">Sin carrera en vivo activa para este ejercicio.</div>
     <div id="live2Message" class="militopo-live2-message">Inicializando Firebase…</div>
     <div class="militopo-live2-table-wrap">
-      <table class="militopo-live2-table"><colgroup><col style="width:18%"><col style="width:11%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:11%"><col style="width:10%"><col style="width:10%"><col style="width:11%"><col style="width:8%"><col style="width:8%"></colgroup><thead><tr><th class="militopo-live2-sortable" data-sort-key="participant" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Participante <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-sortable" data-sort-key="status" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Estado <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-nowrap militopo-live2-sortable" data-sort-key="progress" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Progreso <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="pending" tabindex="0" role="button" aria-sort="none"><span>Puntos</span><span class="militopo-live2-sort-label">pendientes <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="discarded" tabindex="0" role="button" aria-sort="none"><span>Puntos</span><span class="militopo-live2-sort-label">descartados <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="adjustedTime" tabindex="0" role="button" aria-sort="none"><span>Tiempo</span><span class="militopo-live2-sort-label">ajustado <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="penalty" tabindex="0" role="button" aria-sort="none"><span>Penalización</span><span class="militopo-live2-sort-label">controles <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="totalTime" tabindex="0" role="button" aria-sort="none"><span>Tiempo</span><span class="militopo-live2-sort-label">real <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-sortable" data-sort-key="lastSync" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Última sincronización <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-sortable" data-sort-key="start" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Salida <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-sortable" data-sort-key="finish" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Llegada <span class="militopo-live2-sort-arrow">↕</span></span></th></tr></thead><tbody id="live2ParticipantsBody"><tr><td colspan="11" class="militopo-live2-empty">Inicia la carrera en vivo para preparar los participantes.</td></tr></tbody></table>
+      <table class="militopo-live2-table"><colgroup><col style="width:17%"><col style="width:10%"><col style="width:8%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:8%"><col style="width:8%"><col style="width:10%"></colgroup><thead><tr><th class="militopo-live2-sortable" data-sort-key="participant" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Participante <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-sortable" data-sort-key="status" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Estado <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-nowrap militopo-live2-sortable" data-sort-key="progress" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Progreso <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="pending" tabindex="0" role="button" aria-sort="none"><span>Puntos</span><span class="militopo-live2-sort-label">pendientes <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="discarded" tabindex="0" role="button" aria-sort="none"><span>Puntos</span><span class="militopo-live2-sort-label">descartados <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="adjustedTime" tabindex="0" role="button" aria-sort="none"><span>Tiempo</span><span class="militopo-live2-sort-label">ajustado <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="penalty" tabindex="0" role="button" aria-sort="none"><span>Penalización</span><span class="militopo-live2-sort-label">controles <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-th-two-lines militopo-live2-sortable" data-sort-key="totalTime" tabindex="0" role="button" aria-sort="none"><span>Tiempo</span><span class="militopo-live2-sort-label">real <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-sortable" data-sort-key="lastSync" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Última sincronización <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-sortable" data-sort-key="start" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Salida <span class="militopo-live2-sort-arrow">↕</span></span></th><th class="militopo-live2-sortable" data-sort-key="finish" tabindex="0" role="button" aria-sort="none"><span class="militopo-live2-sort-label">Llegada <span class="militopo-live2-sort-arrow">↕</span></span></th><th>Track GPS</th></tr></thead><tbody id="live2ParticipantsBody"><tr><td colspan="12" class="militopo-live2-empty">Inicia la carrera en vivo para preparar los participantes.</td></tr></tbody></table>
     </div>`;
   const header = step5.querySelector(":scope > .card-header");
   const segments = step5.querySelector("#raceSegmentsConfigBlock");
@@ -309,8 +342,11 @@ async function processFinishedResults(rows){
     // FINISH llega antes que el track para que el resultado no dependa de un
     // payload grande. Si el móvil declara puntos GPS, esperamos el ACK completo
     // antes de importar: así distancia, replay y resultado entran juntos.
+    const vaultKey=`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(pid)}`;
+    const hydratedTrack=organizerTrackMemory.get(vaultKey);
+    const usableTrack=Array.isArray(participant?.track)&&participant.track.length?participant.track:(Array.isArray(hydratedTrack)?hydratedTrack:[]);
     const expectedTrackCount=Math.max(0,Number(participant?.trackPointCount)||0);
-    const receivedTrackCount=Array.isArray(participant?.track)?participant.track.length:0;
+    const receivedTrackCount=usableTrack.length;
     if(expectedTrackCount>0&&(participant?.trackComplete!==true||receivedTrackCount<expectedTrackCount))continue;
     const fingerprint=resultFingerprint(resultCode);
     const busyKey=`${pid}:${fingerprint}`;
@@ -321,7 +357,7 @@ async function processFinishedResults(rows){
       const result=window.MILITOPO_LIVE_IMPORT_RESULT(resultCode,{
         runId:organizerRunId,
         receivedAt:participant?.finishTime||nowIso(),
-        track:Array.isArray(participant?.track)?participant.track:[],
+        track:usableTrack,
         trackPointCount:Number(participant?.trackPointCount)||0
       });
       if(result?.ok){
@@ -344,6 +380,76 @@ async function processFinishedResults(rows){
     }finally{
       organizerAutoImportBusy.delete(busyKey);
     }
+  }
+}
+
+function organizerTrackVaultOpen(){
+  return new Promise((resolve,reject)=>{
+    try{
+      const req=indexedDB.open(ORGANIZER_TRACK_VAULT_DB,1);
+      req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(ORGANIZER_TRACK_VAULT_STORE))req.result.createObjectStore(ORGANIZER_TRACK_VAULT_STORE,{keyPath:"id"});};
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error||new Error("No se pudo abrir el almacén de tracks del organizador"));
+    }catch(error){reject(error)}
+  });
+}
+async function organizerTrackVaultPut(row){
+  const dbx=await organizerTrackVaultOpen();
+  await new Promise((resolve,reject)=>{
+    const tx=dbx.transaction(ORGANIZER_TRACK_VAULT_STORE,"readwrite");
+    tx.objectStore(ORGANIZER_TRACK_VAULT_STORE).put(row);
+    tx.oncomplete=resolve;
+    tx.onerror=()=>reject(tx.error||new Error("No se pudo guardar el track del organizador"));
+    tx.onabort=()=>reject(tx.error||new Error("Se canceló el guardado del track"));
+  });
+  try{dbx.close()}catch(_){}
+}
+async function organizerTrackVaultLoadRun(eventKey,runId){
+  const dbx=await organizerTrackVaultOpen();
+  const rows=await new Promise((resolve,reject)=>{
+    const tx=dbx.transaction(ORGANIZER_TRACK_VAULT_STORE,"readonly");
+    const req=tx.objectStore(ORGANIZER_TRACK_VAULT_STORE).getAll();
+    req.onsuccess=()=>resolve(req.result||[]);
+    req.onerror=()=>reject(req.error||new Error("No se pudieron recuperar los tracks"));
+  });
+  try{dbx.close()}catch(_){}
+  return rows.filter(row=>row.eventKey===eventKey&&row.runId===runId);
+}
+async function hydrateOrganizerTrack(participant){
+  const pid=String(participant?.participantId||"");
+  const expected=Math.max(0,Number(participant?.trackPointCount)||0);
+  if(!pid||!expected||participant?.trackComplete!==true||!organizerEventKey||!organizerRunId)return;
+  const vaultKey=`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(pid)}`;
+  if(organizerTrackHydrationBusy.has(vaultKey))return;
+  const cached=organizerTrackMemory.get(vaultKey);
+  if(Array.isArray(cached)&&cached.length>=expected){
+    if(typeof window.MILITOPO_LIVE_ATTACH_TRACK==="function")window.MILITOPO_LIVE_ATTACH_TRACK(pid,cached,{trackPointCount:expected,trackDigest:participant?.trackDigest,live:true});
+    return;
+  }
+  organizerTrackHydrationBusy.add(vaultKey);
+  try{
+    let track=Array.isArray(participant?.track)?participant.track:[];
+    const inlineDigest=track.length?stableTrackDigest(track):"";
+    if(track.length!==expected||(participant?.trackDigest&&inlineDigest!==String(participant.trackDigest))){
+      const transferId=String(participant?.trackTransferId||"");
+      if(!transferId)throw new Error("Transferencia sin identificador");
+      const chunksSnap=await get(ref(db,`${participantPath(organizerEventKey,organizerRunId,pid)}/trackTransfers/${safeFirebaseKey(transferId)}/chunks`));
+      const chunks=chunksSnap.val()||{};
+      track=Object.keys(chunks).sort((a,b)=>Number(a)-Number(b)).flatMap(key=>Array.isArray(chunks[key])?chunks[key]:[]);
+    }
+    if(track.length!==expected)throw new Error(`Track incompleto: ${track.length}/${expected}`);
+    const digest=stableTrackDigest(track);
+    if(participant?.trackDigest&&digest!==String(participant.trackDigest))throw new Error("La verificación de integridad del track no coincide");
+    organizerTrackMemory.set(vaultKey,track);
+    await organizerTrackVaultPut({id:vaultKey,eventKey:organizerEventKey,runId:organizerRunId,participantId:pid,trackPointCount:track.length,trackDigest:digest,track,savedAt:nowIso()});
+    if(typeof window.MILITOPO_LIVE_ATTACH_TRACK==="function")window.MILITOPO_LIVE_ATTACH_TRACK(pid,track,{trackPointCount:track.length,trackDigest:digest,live:true});
+    await processFinishedResults([{...participant,track}]);
+    setTimeout(()=>renderOrganizerParticipants(Object.fromEntries(organizerLatestRows.map((p,index)=>[String(p?.participantId||index),p]))),0);
+  }catch(error){
+    console.warn(`MILITOPO LIVE · track ${pid} pendiente de reconstrucción`,error);
+    setMessage(`Track de ${pid} pendiente de completar o verificar. MILITOPO seguirá reintentándolo.`,"warn");
+  }finally{
+    organizerTrackHydrationBusy.delete(vaultKey);
   }
 }
 
@@ -499,6 +605,12 @@ function renderOrganizerParticipants(participantsValue) {
   const participants = participantsValue && typeof participantsValue === "object" ? participantsValue : {};
   const rows = applyOrganizerColumnSort(sortOrganizerParticipants(participants));
   organizerLatestRows = rows;
+  rows.forEach(p=>{
+    if(!Array.isArray(p?.track)||!p.track.length)return;
+    const digest=stableTrackDigest(p.track);
+    if(p?.trackDigest&&String(p.trackDigest)!==digest)return;
+    organizerTrackMemory.set(`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p.participantId)}`,p.track);
+  });
   const counts = { total: rows.length, pending:0, racing:0, finished:0 };
   rows.forEach(p => {
     if (typeof window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS === "function") {
@@ -512,10 +624,27 @@ function renderOrganizerParticipants(participantsValue) {
   if ($("live2Pending")) $("live2Pending").textContent = String(counts.pending);
   if ($("live2Racing")) $("live2Racing").textContent = String(counts.racing);
   if ($("live2Finished")) $("live2Finished").textContent = String(counts.finished);
+  const resultsReceived=rows.filter(p=>(p?.status==="finished"||!!p?.finishTime)&&(!!String(p?.resultCode||"").trim()||!!p?.resultReceivedClient)).length;
+  const tracksReceived=rows.filter(p=>{
+    if(!(p?.status==="finished"||!!p?.finishTime))return false;
+    const expected=Math.max(0,Number(p?.trackPointCount)||0);
+    const verified=organizerTrackMemory.get(`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p?.participantId)}`);
+    return expected>0&&p?.trackComplete===true&&!!p?.trackReceivedClient&&!!p?.trackDigest&&Array.isArray(verified)&&verified.length===expected&&stableTrackDigest(verified)===String(p.trackDigest);
+  }).length;
+  const pendingDeliveries=organizerPendingDeliveries().length;
+  const setDelivery=(id,current,total)=>{
+    const el=$(id);if(!el)return;
+    el.className=current>=total&&total>0?"ok":"wait";
+    el.innerHTML=`<strong>${current} / ${total}</strong>${id==="live2ResultsDelivery"?"RESULTADOS RECIBIDOS":"TRACKS COMPLETOS"}`;
+  };
+  setDelivery("live2ResultsDelivery",resultsReceived,rows.length);
+  setDelivery("live2TracksDelivery",tracksReceived,rows.length);
+  const pendingBox=$("live2PendingDelivery");
+  if(pendingBox){pendingBox.className=pendingDeliveries===0?"ok":"wait";pendingBox.innerHTML=`<strong>${pendingDeliveries}</strong>ENTREGAS PENDIENTES`;}
   const body = $("live2ParticipantsBody");
   if (!body) return;
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="11" class="militopo-live2-empty">Todavía no hay participantes preparados.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="12" class="militopo-live2-empty">Todavía no hay participantes preparados.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map(p => {
@@ -532,6 +661,10 @@ function renderOrganizerParticipants(participantsValue) {
     const penaltyMinutes = getDiscardPenaltyMinutes();
     const finishedForPenalty=Boolean(finishRaw)||String(p.status||"")==="finished";
     const penaltyMs = (discarded + (finishedForPenalty ? pending : 0)) * penaltyMinutes * 60000;
+    const expectedTrack=Math.max(0,Number(p.trackPointCount)||0);
+    const verifiedTrack=organizerTrackMemory.get(`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p.participantId)}`);
+    const trackOk=expectedTrack>0&&p.trackComplete===true&&!!p.trackReceivedClient&&!!p.trackDigest&&Array.isArray(verifiedTrack)&&verifiedTrack.length===expectedTrack&&stableTrackDigest(verifiedTrack)===String(p.trackDigest);
+    const trackLabel=trackOk?`✅ ${expectedTrack} puntos`:(finishRaw?`⏳ ${expectedTrack||0} puntos`:"—");
     return `<tr>
       <td class="militopo-live2-name"><b>${safeText(name || pid)}</b><small><span>${safeText(name ? pid : "Sin nombre asignado")}</span><span class="militopo-live2-route-tag">${safeText(routeId)}</span></small></td>
       <td><span class="militopo-live2-state ${st.cls}">${st.label}</span></td>
@@ -544,20 +677,45 @@ function renderOrganizerParticipants(participantsValue) {
       <td class="militopo-live2-time">${safeText(formatLastSeen(p.lastSeenClient || p.lastSeen))}</td>
       <td class="militopo-live2-time">${safeText(formatLiveClock(startRaw))}</td>
       <td class="militopo-live2-time">${safeText(formatLiveClock(finishRaw))}</td>
+      <td><span class="militopo-live2-state ${trackOk?"imported":finishRaw?"ready":"not_started"}">${safeText(trackLabel)}</span></td>
     </tr>`;
   }).join("");
   refreshOrganizerTimeCells();
-  if(typeof window.MILITOPO_LIVE_ATTACH_TRACK==="function") rows.forEach(p=>{if(Array.isArray(p?.track)&&p.track.length)window.MILITOPO_LIVE_ATTACH_TRACK(p.participantId,p.track,{trackPointCount:p.trackPointCount,live:true})});
+  rows.forEach(p=>{
+    if(Array.isArray(p?.track)&&p.track.length){
+      const vaultKey=`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p.participantId)}`;
+      const digest=stableTrackDigest(p.track);
+      if(!p.trackDigest||String(p.trackDigest)===digest){
+        organizerTrackMemory.set(vaultKey,p.track);
+        organizerTrackVaultPut({id:vaultKey,eventKey:organizerEventKey,runId:organizerRunId,participantId:String(p.participantId||""),trackPointCount:p.track.length,trackDigest:digest,track:p.track,savedAt:nowIso()}).catch(error=>console.warn("MILITOPO LIVE · vault organizador",error));
+        if(typeof window.MILITOPO_LIVE_ATTACH_TRACK==="function")window.MILITOPO_LIVE_ATTACH_TRACK(p.participantId,p.track,{trackPointCount:p.trackPointCount,trackDigest:digest,live:true});
+      }else hydrateOrganizerTrack(p);
+    }else hydrateOrganizerTrack(p);
+  });
   processFinishedResults(rows).catch(error=>console.warn("MILITOPO LIVE · procesar resultados",error));
 }
 
 function updateOrganizerButtons() {
   const ready = Boolean(currentUser && firebaseConnected);
-  const active = Boolean(organizerRunId);
+  const active = Boolean(organizerRunId&&(organizerRunStatus==="active"||organizerRunStatus==="closing"));
   const start = $("live2StartRunBtn");
   const stop = $("live2StopRunBtn");
   if (start) start.disabled = !ready || active;
-  if (stop) stop.disabled = !ready || !active;
+  if (stop) {
+    stop.disabled = !ready || !active;
+    stop.textContent = organizerRunStatus==="closing" ? "⏳ FINALIZAR CUANDO ESTÉ 40/40" : "■ CERRAR CARRERA EN VIVO";
+  }
+}
+
+function organizerPendingDeliveries(){
+  return organizerLatestRows.filter(p=>{
+    const finished=p?.status==="finished"||!!p?.finishTime;
+    const resultOk=finished&&(!!String(p?.resultCode||"").trim()||!!p?.resultReceivedClient);
+    const expected=Math.max(0,Number(p?.trackPointCount)||0);
+    const verified=organizerTrackMemory.get(`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p?.participantId)}`);
+    const trackOk=finished&&expected>0&&p?.trackComplete===true&&!!p?.trackReceivedClient&&!!p?.trackDigest&&Array.isArray(verified)&&verified.length===expected&&stableTrackDigest(verified)===String(p.trackDigest);
+    return !resultOk||!trackOk;
+  });
 }
 
 function cleanupOrganizerRunListener() {
@@ -569,7 +727,9 @@ async function attachOrganizerRun(eventKey, runId, meta = null) {
   cleanupOrganizerRunListener();
   organizerEventKey = eventKey;
   organizerRunId = runId || "";
+  organizerRunStatus = String(meta?.status||"");
   if (!runId) {
+    organizerRunStatus = "";
     organizerAutoImportedCount = 0;
     setBadge("live2RunBadge", "CARRERA · NO INICIADA", "neutral");
     if ($("live2RunText")) $("live2RunText").textContent = "Sin carrera en vivo activa para este ejercicio.";
@@ -577,7 +737,8 @@ async function attachOrganizerRun(eventKey, runId, meta = null) {
     updateOrganizerButtons();
     return;
   }
-  setBadge("live2RunBadge", "CARRERA · ACTIVA", "ok");
+  const archived=organizerRunStatus==="archived";
+  setBadge("live2RunBadge", archived?"CARRERA · ARCHIVADA":organizerRunStatus==="closing"?"CARRERA · RECIBIENDO PENDIENTES":"CARRERA · ACTIVA", organizerRunStatus==="closing"?"warn":"ok");
   organizerAutoImportedCount = Object.keys(readAutoImportMap()).length;
   const ctx = organizerContext() || {};
   if ($("live2RunText")) $("live2RunText").innerHTML = `Ejercicio: <b>${safeText(ctx.eventName || meta?.eventName || "ORIENTACIÓN")}</b><br>Sesión: <b>${safeText(runId)}</b>`;
@@ -585,6 +746,14 @@ async function attachOrganizerRun(eventKey, runId, meta = null) {
   organizerUnsubParticipants = onValue(ref(db, `${runPath(eventKey, runId)}/participants`), snap => {
     renderOrganizerParticipants(snap.val() || {});
   }, error => setMessage(`No se pudo leer el progreso: ${error.message}`, "error"));
+  organizerTrackVaultLoadRun(eventKey,runId).then(rows=>{
+    rows.forEach(row=>{
+      if(!Array.isArray(row.track)||row.track.length!==Number(row.trackPointCount||0)||stableTrackDigest(row.track)!==String(row.trackDigest||""))return;
+      organizerTrackMemory.set(row.id,row.track);
+      if(typeof window.MILITOPO_LIVE_ATTACH_TRACK==="function")window.MILITOPO_LIVE_ATTACH_TRACK(row.participantId,row.track,{trackPointCount:row.trackPointCount,trackDigest:row.trackDigest,live:true,recovered:true});
+    });
+    processFinishedResults(organizerLatestRows).catch(error=>console.warn("MILITOPO LIVE · importar desde vault",error));
+  }).catch(error=>console.warn("MILITOPO LIVE · restaurar vault organizador",error));
   updateOrganizerButtons();
   setMessage("Carrera en vivo activa. La llegada y el resultado se importarán automáticamente; el QR final queda como respaldo.", "ok");
 }
@@ -599,7 +768,7 @@ async function bindOrganizerEvent(ctx) {
   organizerRunId = "";
   organizerUnsubActive = onValue(ref(db, activeRunPath(eventKey)), snap => {
     const active = snap.val();
-    if (active && active.status === "active" && active.runId) attachOrganizerRun(eventKey, String(active.runId), active);
+    if (active && (active.status === "active" || active.status === "closing" || active.status === "archived") && active.runId) attachOrganizerRun(eventKey, String(active.runId), active);
     else attachOrganizerRun(eventKey, "");
   }, error => setMessage(`No se pudo comprobar la carrera activa: ${error.message}`, "error"));
 }
@@ -644,7 +813,8 @@ async function startOrganizerRun() {
       runId,
       createdBy: currentUser.uid,
       createdAt: serverTimestamp(),
-      createdAtClient: nowIso()
+      createdAtClient: nowIso(),
+      startedAtClient: nowIso()
     });
     await set(ref(db, `${runPath(eventKey, runId)}/participants`), participants);
     await set(ref(db, activeRunPath(eventKey)), {
@@ -664,11 +834,29 @@ async function startOrganizerRun() {
 
 async function stopOrganizerRun() {
   if (!organizerEventKey || !organizerRunId) return;
-  if (!window.confirm("¿Cerrar la carrera en vivo? Los participantes conservarán todo localmente, pero dejarán de sincronizar con esta sesión.")) return;
+  const pending=organizerPendingDeliveries();
+  if(pending.length){
+    const sample=pending.slice(0,8).map(p=>String(p?.participantId||"—")).join(", ");
+    if(organizerRunStatus!=="closing"){
+      if(!window.confirm(`Faltan datos de ${pending.length} participante${pending.length===1?"":"s"} (${sample}${pending.length>8?", …":""}).\n\nLa carrera pasará a MODO RECEPCIÓN: se detiene el seguimiento deportivo, pero seguirá aceptando resultados y tracks cuando les des cobertura.`))return;
+      try{
+        organizerRunStatus="closing";
+        await update(ref(db, `${runPath(organizerEventKey, organizerRunId)}/meta`), { status:"closing", closingAt:serverTimestamp(), closingAtClient:nowIso() });
+        await update(ref(db, activeRunPath(organizerEventKey)), {status:"closing",runId:organizerRunId,closingAt:serverTimestamp(),closingAtClient:nowIso()});
+        setBadge("live2RunBadge","CARRERA · RECIBIENDO PENDIENTES","warn");
+        setMessage(`Modo recepción activo. Faltan ${pending.length} participantes; no se borrará ni cerrará la sesión.`,"warn");
+        updateOrganizerButtons();
+      }catch(error){setMessage(`No se pudo activar el modo recepción: ${error.message}`,"error");}
+    }else{
+      setMessage(`La sesión sigue protegida: faltan resultados o tracks de ${pending.length} participantes (${sample}${pending.length>8?", …":""}).`,"warn");
+    }
+    return;
+  }
+  if (!window.confirm("Todos los participantes tienen resultado y track verificado. ¿Archivar y cerrar la recepción de esta carrera?")) return;
   try {
-    await update(ref(db, `${runPath(organizerEventKey, organizerRunId)}/meta`), { status:"closed", closedAt:serverTimestamp(), closedAtClient:nowIso() });
-    await set(ref(db, activeRunPath(organizerEventKey)), null);
-    setMessage("Carrera en vivo cerrada. MILITOPO local continúa funcionando.", "warn");
+    await update(ref(db, `${runPath(organizerEventKey, organizerRunId)}/meta`), { status:"archived", closedAt:serverTimestamp(), closedAtClient:nowIso() });
+    await set(ref(db, activeRunPath(organizerEventKey)), {status:"archived",runId:organizerRunId,archivedAt:serverTimestamp(),archivedAtClient:nowIso()});
+    setMessage("Carrera archivada con todos los resultados y tracks confirmados.", "ok");
   } catch (error) {
     setMessage(`No se pudo cerrar la carrera: ${error.message}`, "error");
   }
@@ -677,6 +865,11 @@ async function stopOrganizerRun() {
 async function resetOrganizerEventForReusableExercise(eventId) {
   const eventKey = safeFirebaseKey(eventId || organizerEventKey || "");
   if (!eventKey) return false;
+  const pending=organizerPendingDeliveries();
+  if(pending.length){
+    setMessage(`No se puede restaurar todavía: faltan datos de ${pending.length} participante${pending.length===1?"":"s"}. Activa datos en sus móviles y espera la confirmación 40/40.`,"error");
+    return false;
+  }
   try { localStorage.removeItem(ORGANIZER_RUN_KEY_PREFIX + eventKey); } catch (_) {}
   try { localStorage.removeItem(AUTO_IMPORT_KEY_PREFIX + eventKey); } catch (_) {}
   try { organizerAutoImportedCount = 0; organizerLatestRows = []; organizerAutoImportBusy.clear(); } catch (_) {}
@@ -694,9 +887,7 @@ async function resetOrganizerEventForReusableExercise(eventId) {
       const active = activeSnap.val();
       const runId = String(active?.runId || previousRunId || "");
       if (runId) {
-        try { await update(ref(db, `${runPath(eventKey, runId)}/meta`), { status:"reset", resetAt:serverTimestamp(), resetAtClient:nowIso() }); } catch (_) {}
-        try { await set(ref(db, `${runPath(eventKey, runId)}/participants`), null); } catch (_) {}
-        try { await set(ref(db, `${runPath(eventKey, runId)}/events`), null); } catch (_) {}
+        try { await update(ref(db, `${runPath(eventKey, runId)}/meta`), { status:"archived", archivedAt:serverTimestamp(), archivedAtClient:nowIso() }); } catch (_) {}
       }
       await set(ref(db, activeRunPath(eventKey)), null);
     } catch (error) {
@@ -729,6 +920,9 @@ function trackOutboxOpen(){
   });
 }
 async function trackOutboxPut(bundle){
+  if(!bundle||!Array.isArray(bundle.track)||!bundle.track.length)throw new Error("Track vacío: no se puede confirmar su almacenamiento");
+  const expectedDigest=String(bundle.trackDigest||stableTrackDigest(bundle.track));
+  bundle={...bundle,trackDigest:expectedDigest,trackPointCount:bundle.track.length};
   const dbx=await trackOutboxOpen();
   await new Promise((resolve,reject)=>{
     const tx=dbx.transaction(TRACK_OUTBOX_STORE,"readwrite");
@@ -741,7 +935,7 @@ async function trackOutboxPut(bundle){
       // Nunca permitimos que una escritura asíncrona antigua sustituya una
       // captura más completa que ya llegó a IndexedDB.
       const merged={...previous,...bundle};
-      if(previousCount>nextCount){merged.track=previous.track;merged.trackPointCount=previousCount;}
+      if(previousCount>nextCount){merged.track=previous.track;merged.trackPointCount=previousCount;merged.trackDigest=String(previous.trackDigest||stableTrackDigest(previous.track));}
       merged.runId=String(bundle?.runId||previous?.runId||"");
       store.put(merged);
     };
@@ -749,20 +943,41 @@ async function trackOutboxPut(bundle){
     tx.oncomplete=resolve;
     tx.onerror=()=>reject(tx.error);
   });
+  const verified=await new Promise((resolve,reject)=>{
+    const tx=dbx.transaction(TRACK_OUTBOX_STORE,"readonly");
+    const req=tx.objectStore(TRACK_OUTBOX_STORE).get(bundle.id);
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error("No se pudo verificar el track guardado"));
+  });
   try{dbx.close()}catch(_){ }
+  const verifiedDigest=verified&&Array.isArray(verified.track)?stableTrackDigest(verified.track):"";
+  if(!verified||!Array.isArray(verified.track)||verified.track.length<bundle.track.length||String(verified.trackDigest||"")!==verifiedDigest)throw new Error("La comprobación del track guardado en IndexedDB no coincide");
+  participantStorageError="";
   await refreshTrackOutboxCount();
 }
 async function trackOutboxGetAll(){
-  try{const dbx=await trackOutboxOpen();const rows=await new Promise((resolve,reject)=>{const tx=dbx.transaction(TRACK_OUTBOX_STORE,"readonly");const req=tx.objectStore(TRACK_OUTBOX_STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});try{dbx.close()}catch(_){ }return rows;}catch(_){return []}
+  const dbx=await trackOutboxOpen();
+  const rows=await new Promise((resolve,reject)=>{const tx=dbx.transaction(TRACK_OUTBOX_STORE,"readonly");const req=tx.objectStore(TRACK_OUTBOX_STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error||new Error("No se pudo leer la cola de tracks"));});
+  try{dbx.close()}catch(_){ }
+  return rows;
 }
 async function trackOutboxDelete(id){
-  try{const dbx=await trackOutboxOpen();await new Promise((resolve,reject)=>{const tx=dbx.transaction(TRACK_OUTBOX_STORE,"readwrite");tx.objectStore(TRACK_OUTBOX_STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});try{dbx.close()}catch(_){ }await refreshTrackOutboxCount();}catch(_){ }
+  const dbx=await trackOutboxOpen();
+  await new Promise((resolve,reject)=>{const tx=dbx.transaction(TRACK_OUTBOX_STORE,"readwrite");tx.objectStore(TRACK_OUTBOX_STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error("No se pudo confirmar el borrado del track enviado"));});
+  try{dbx.close()}catch(_){ }
+  await refreshTrackOutboxCount();
 }
 async function refreshTrackOutboxCount(){
-  const rows=await trackOutboxGetAll();
-  const eventKey=participantEventKey||safeFirebaseKey(participantContext?.eventId||"");
-  const pid=String(participantContext?.participantId||"");
-  participantPendingTrackCount=rows.filter(row=>(!eventKey||String(row?.eventKey||"")===eventKey)&&(!pid||String(row?.participantId||"")===pid)&&Array.isArray(row?.track)&&row.track.length).length;
+  try{
+    const rows=await trackOutboxGetAll();
+    const eventKey=participantEventKey||safeFirebaseKey(participantContext?.eventId||"");
+    const pid=String(participantContext?.participantId||"");
+    participantPendingTrackCount=rows.filter(row=>(!eventKey||String(row?.eventKey||"")===eventKey)&&(!pid||String(row?.participantId||"")===pid)&&Array.isArray(row?.track)&&row.track.length).length;
+  }catch(error){
+    participantStorageError=String(error?.message||"No se puede leer el almacenamiento offline");
+    participantPendingTrackCount=Math.max(1,participantPendingTrackCount);
+    console.error("MILITOPO LIVE · almacenamiento de tracks no disponible",error);
+  }
   return participantPendingTrackCount;
 }
 function rememberResolvedParticipantRun(runId,eventKey=participantEventKey){
@@ -823,6 +1038,7 @@ async function flushTrackOutbox(){
   try{
     const rows=await trackOutboxGetAll();
     for(const bundle of rows){
+      if(Number(bundle?.nextRetryAt||0)>Date.now())continue;
       const bundleEventKey=String(bundle?.eventKey||safeFirebaseKey(bundle?.eventId||""));
       const bundlePid=String(bundle?.participantId||"");
       if(!bundleEventKey||!bundlePid)continue;
@@ -840,6 +1056,7 @@ async function flushTrackOutbox(){
       const pBase=participantPath(bundleEventKey,targetRunId,bundlePid);
       const transferId=safeFirebaseKey(bundle.transferId||bundle.id);
       const totalChunks=Math.ceil(track.length/TRACK_UPLOAD_CHUNK_SIZE);
+      const trackDigest=String(bundle.trackDigest||stableTrackDigest(track));
       try{
         const trackStartData={
           participantId:bundlePid,
@@ -849,18 +1066,30 @@ async function flushTrackOutbox(){
           trackPointCount:track.length,
           trackTransferId:transferId,
           trackTransferTotalChunks:totalChunks,
+          trackDigest,
+          track:null,
           trackUpdatedClient:bundle.clientTime||nowIso()
         };
         if(Array.isArray(bundle.routePointIds))trackStartData.routePointIds=bundle.routePointIds;
         await update(ref(db,pBase),trackStartData);
+        const ackSnap=await get(ref(db,`${pBase}/trackTransfers/${transferId}/chunkAcks`));
+        const chunkAcks=ackSnap.val()||{};
         for(let i=0;i<totalChunks;i++){
           const chunk=track.slice(i*TRACK_UPLOAD_CHUNK_SIZE,(i+1)*TRACK_UPLOAD_CHUNK_SIZE);
+          const chunkDigest=stableTrackDigest(chunk);
+          if(String(chunkAcks[i]||"")===chunkDigest)continue;
           await set(ref(db,`${pBase}/trackTransfers/${transferId}/chunks/${i}`),chunk);
-          await update(ref(db,`${pBase}/trackTransfers/${transferId}`),{transferId,totalChunks,trackPointCount:track.length,receivedChunks:i+1,lastChunkClient:nowIso()});
+          await set(ref(db,`${pBase}/trackTransfers/${transferId}/chunkAcks/${i}`),chunkDigest);
+          await update(ref(db,`${pBase}/trackTransfers/${transferId}`),{transferId,totalChunks,trackPointCount:track.length,trackDigest,lastChunkClient:nowIso()});
+        }
+        const verifiedAcks=(await get(ref(db,`${pBase}/trackTransfers/${transferId}/chunkAcks`))).val()||{};
+        for(let i=0;i<totalChunks;i++){
+          const expectedChunkDigest=stableTrackDigest(track.slice(i*TRACK_UPLOAD_CHUNK_SIZE,(i+1)*TRACK_UPLOAD_CHUNK_SIZE));
+          if(String(verifiedAcks[i]||"")!==expectedChunkDigest)throw new Error(`Falta confirmar el bloque ${i+1}/${totalChunks}`);
         }
         const trackCompleteData={
-          track,
           trackPointCount:track.length,
+          trackDigest,
           trackComplete:true,
           trackUploadPending:false,
           trackReceivedClient:nowIso(),
@@ -873,14 +1102,23 @@ async function flushTrackOutbox(){
         if(Number.isFinite(Number(bundle.distanceM)))trackCompleteData.distanceM=Math.round(Number(bundle.distanceM));
         await update(ref(db,pBase),trackCompleteData);
         const ack=(await get(ref(db,pBase))).val();
-        if(ack?.trackComplete!==true||Number(ack?.trackPointCount||0)<track.length)throw new Error(`ACK de track incompleto: ${Number(ack?.trackPointCount||0)}/${track.length}`);
+        if(ack?.trackComplete!==true||Number(ack?.trackPointCount||0)!==track.length||String(ack?.trackDigest||"")!==trackDigest||Number(ack?.trackTransferReceivedChunks||0)!==totalChunks)throw new Error(`ACK de track incompleto: ${Number(ack?.trackPointCount||0)}/${track.length}`);
         await trackOutboxDelete(bundle.id);
         participantExpectedTrackPointCount=Math.max(participantExpectedTrackPointCount,track.length);
         participantTrackReceived=!!participantContext?.finishTime;
         confirmParticipantSync();
         bindParticipantOwnRecord();
-      }catch(error){console.warn("MILITOPO LIVE · track pendiente en IndexedDB",error);break;}
+      }catch(error){
+        const retryCount=Math.max(0,Number(bundle?.retryCount)||0)+1;
+        const retryDelay=Math.min(120000,5000*Math.pow(2,Math.min(5,retryCount-1)));
+        try{await trackOutboxPut({...bundle,track,trackDigest,retryCount,nextRetryAt:Date.now()+retryDelay,lastError:String(error?.message||error),lastAttemptAt:nowIso()});}catch(storageError){participantStorageError=String(storageError?.message||storageError);}
+        console.warn("MILITOPO LIVE · track pendiente en IndexedDB",error);
+        break;
+      }
     }
+  }catch(error){
+    participantStorageError=String(error?.message||"No se puede leer la cola de tracks");
+    console.error("MILITOPO LIVE · fallo de almacenamiento offline",error);
   }finally{
     trackOutboxFlushBusy=false;
     await refreshTrackOutboxCount();
@@ -930,8 +1168,9 @@ function participantSyncSnapshot() {
   const pendingTrack=Math.max(0,Number(participantPendingTrackCount)||0);
   const pending = summary.total+pendingTrack;
   const finishedLocally=!!participantContext?.finishTime;
-  const extra = { pending, pendingEvents:summary.total, pendingTrack, pendingControls:summary.controls, pendingResult:summary.result||(finishedLocally&&!participantResultReceived), pendingStart:summary.start, resultReceived:participantResultReceived, trackReceived:participantTrackReceived, expectedTrackPointCount:participantExpectedTrackPointCount };
+  const extra = { pending, pendingEvents:summary.total, pendingTrack, pendingControls:summary.controls, pendingResult:summary.result||(finishedLocally&&!participantResultReceived), pendingStart:summary.start, resultReceived:participantResultReceived, trackReceived:participantTrackReceived, expectedTrackPointCount:participantExpectedTrackPointCount, storageError:participantStorageError };
   const lastSyncAt = loadParticipantLastSync() || "";
+  if(participantStorageError)return {state:"error",text:"🔴 ERROR AL GUARDAR EL TRACK · NO BORRES LA CARRERA",lastSyncAt,...extra};
   if (!firebaseConnected || !db || !currentUser) {
     return { state:"offline", text:"🟠 SIN COBERTURA · GUARDADO EN EL MÓVIL", lastSyncAt, ...extra };
   }
@@ -987,7 +1226,7 @@ function bindParticipantOwnRecord() {
       participantResultReceived = localFinished && data.status === "finished" && !!data.finishTime && (
         !!String(data.resultCode || "").trim() || !!data.resultReceivedClient
       );
-      participantTrackReceived = localFinished && data.trackComplete === true && Number(data.trackPointCount || 0) >= localTrackCount && !!data.trackReceivedClient;
+      participantTrackReceived = localFinished && data.trackComplete === true && Number(data.trackPointCount || 0) === localTrackCount && !!data.trackReceivedClient && !!String(data.trackDigest||"");
       publishParticipantSyncStatus();
     }
     if (!data || data.resultImported !== true) return;
@@ -1110,7 +1349,7 @@ async function bindParticipantEvent(ctx) {
   participantRunId = String(participantContext?.liveRunId||"");
   participantUnsubActive = onValue(ref(db, activeRunPath(eventKey)), async snap => {
     const active = snap.val();
-    if (active && active.status === "active" && active.runId) {
+    if (active && (active.status === "active" || active.status === "closing") && active.runId) {
       participantActiveRunAvailable = true;
       participantRunId = String(active.runId);
       persistParticipantContext({...participantContext,liveRunId:participantRunId});
@@ -1333,6 +1572,11 @@ function handleParticipantMessage(event) {
   if (!ctx.eventId || !ctx.participantId) return;
   if (event.source && participantMessageSource !== event.source) participantLastImportNoticeKey = "";
   participantMessageSource = event.source || participantMessageSource;
+  if(msg.kind==="STORAGE_HEALTH"){
+    participantStorageError=String(ctx.storageError||"");
+    publishParticipantSyncStatus();
+    return;
+  }
   if (msg.kind === "TRACK_BUNDLE") {
     const preservedResultCode=String(participantContext?.resultCode||"").trim();
     const fullTrack=Array.isArray(ctx.fullTrack)?ctx.fullTrack:[];
@@ -1349,6 +1593,7 @@ function handleParticipantMessage(event) {
       runId:String(participantRunId||participantContext?.liveRunId||ctx.liveRunId||""),
       transferId:String(ctx.transferId||"track"),
       trackPointCount:fullTrack.length||Number(ctx.trackPointCount)||0,
+      trackDigest:String(ctx.trackDigest||stableTrackDigest(fullTrack)),
       distanceM:Number.isFinite(Number(ctx.distanceM))?Math.round(Number(ctx.distanceM)):null,
       track:fullTrack,
       clientTime:ctx.clientTime||nowIso(),
@@ -1356,7 +1601,16 @@ function handleParticipantMessage(event) {
     };
     persistParticipantContext({...participantContext,...ctx,fullTrack:undefined,resultCode:preservedResultCode,trackPointCount:bundle.trackPointCount,liveRunId:bundle.runId||participantContext?.liveRunId||""});
     participantExpectedTrackPointCount=Math.max(0,fullTrack.length||Number(ctx.trackPointCount)||0);
-    trackOutboxPut(bundle).then(()=>{publishParticipantSyncStatus();return flushTrackOutbox();}).catch(error=>console.warn("MILITOPO LIVE · no se pudo guardar el track",error));
+    trackOutboxPut(bundle).then(()=>{
+      participantStorageError="";
+      publishParticipantSyncStatus();
+      try{participantMessageSource?.postMessage({source:"MILITOPO_LIVE_TRACK_STORED",payload:{participantId:bundle.participantId,trackPointCount:bundle.trackPointCount,trackDigest:bundle.trackDigest}},"*");}catch(_){}
+      return flushTrackOutbox();
+    }).catch(error=>{
+      participantStorageError=String(error?.message||"No se pudo guardar el track");
+      publishParticipantSyncStatus();
+      console.error("MILITOPO LIVE · no se pudo guardar el track",error);
+    });
     publishParticipantSyncStatus();
     return;
   }
