@@ -266,7 +266,7 @@
       frame.style.height=Math.max(window.innerHeight||0,720)+"px";
       frame.style.minHeight=Math.max(window.innerHeight||0,720)+"px";
       frame.removeAttribute("srcdoc");
-      const url="runner.html?app=1&v=v71-sync-verificable#boot";
+      const url="runner.html?app=1&v=v72-seguimiento-en-vivo#boot";
       frame.addEventListener("load",()=>loading?.classList.add("is-hidden"),{once:true});
       frame.src=url;
     }catch(error){
