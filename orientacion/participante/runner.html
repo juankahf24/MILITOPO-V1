@@ -1607,10 +1607,10 @@ module.exports = QRCode;
 
 <div id="gpsAudioVisualPulse" class="gps-audio-visual-pulse"></div>
 <div id="toast" style="display:none;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1c2414;color:#f5e6c8;border-radius:999px;padding:12px 16px;font-weight:900"></div>
-<script type="module" src="../js/live/live-phase2.js?v=v70-entrega-offline-track"></script>
+<script type="module" src="../js/live/live-phase2.js?v=v71-sync-verificable"></script>
 <script>
-const BOOT_PAYLOAD_KEYS=["militopo_participant_boot_payload_v3","militopo_participant_boot_payload_latest","militopo_participant_app_snapshot_v1","militopo_participante_recorrido_activo_v1","militopo_participante_recorrido_rescate_v1"];
-const PARTICIPANT_FORCE_BLANK_KEY="militopo_participant_force_blank_v1";
+const BOOT_PAYLOAD_KEYS=["militopo_v1_participant_boot_payload_v3","militopo_v1_participant_boot_payload_latest","militopo_v1_participant_app_snapshot_v1","militopo_v1_participante_recorrido_activo_v1","militopo_v1_participante_recorrido_rescate_v1"];
+const PARTICIPANT_FORCE_BLANK_KEY="militopo_v1_participant_force_blank_v1";
 function isParticipantHardResetStartup(){
   try{
     const params=new URLSearchParams(location.search||"");
@@ -1623,16 +1623,16 @@ function isParticipantHardResetStartup(){
 function wipeParticipantLocalRaceData(){
   try{
     const prefixes=[
-      "militopo_runner_",
-      "militopo_participant_",
-      "militopo_participante_",
-      "militopo_jsqr_cache_v1",
-      "militopo_live_v2_pending_events",
-      "militopo_live_v2_participant_context",
-      "militopo_live_v2_last_sync_",
-      "militopo_live_v2_auto_import_",
-      "militopo_live_v2_result_",
-      "militopo_live_v2_presence_"
+      "militopo_v1_runner_",
+      "militopo_v1_participant_",
+      "militopo_v1_participante_",
+      "militopo_v1_jsqr_cache_v1",
+      "militopo_v1_live_v2_pending_events",
+      "militopo_v1_live_v2_participant_context",
+      "militopo_v1_live_v2_last_sync_",
+      "militopo_v1_live_v2_auto_import_",
+      "militopo_v1_live_v2_result_",
+      "militopo_v1_live_v2_presence_"
     ];
     const wipe=storage=>{try{
       const keys=[];
@@ -1657,7 +1657,7 @@ function readBootPayload(){
   if(isParticipantHardResetStartup())return null;
   const values=[];
   try{BOOT_PAYLOAD_KEYS.forEach(k=>{const a=localStorage.getItem(k);if(a)values.push(a);const b=sessionStorage.getItem(k);if(b)values.push(b);});}catch(e){}
-  try{const wn=String(window.name||"");if(wn.startsWith("MILITOPO_RUN_BACKUP:"))values.push(wn.slice("MILITOPO_RUN_BACKUP:".length));if(wn.startsWith("MILITOPO_PARTICIPANT_SNAPSHOT:"))values.push(wn.slice("MILITOPO_PARTICIPANT_SNAPSHOT:".length));}catch(e){}
+  try{const wn=String(window.name||"");if(wn.startsWith("MILITOPO_V1_RUN_BACKUP:"))values.push(wn.slice("MILITOPO_V1_RUN_BACKUP:".length));if(wn.startsWith("MILITOPO_V1_PARTICIPANT_SNAPSHOT:"))values.push(wn.slice("MILITOPO_V1_PARTICIPANT_SNAPSHOT:".length));}catch(e){}
   const payloads=values.map(parseBootJson).filter(Boolean);
   payloads.sort((a,b)=>String(b.savedAt||b.log?.lastSavedAt||"").localeCompare(String(a.savedAt||a.log?.lastSavedAt||"")));
   return payloads[0]||null;
@@ -1729,19 +1729,21 @@ const INITIAL_URL_LOG=readInitialUrlLog();
 const EVENT_DATA=(INITIAL_URL_EVENT_DATA&&Array.isArray(INITIAL_URL_EVENT_DATA.routes)&&INITIAL_URL_EVENT_DATA.routes.length)?INITIAL_URL_EVENT_DATA:((BOOT_PAYLOAD&&BOOT_PAYLOAD.eventData&&Array.isArray(BOOT_PAYLOAD.eventData.routes)&&BOOT_PAYLOAD.eventData.routes.length)?BOOT_PAYLOAD.eventData:emptyParticipantEventData());
 const PARENT_SAVED_LOG=INITIAL_URL_LOG||((BOOT_PAYLOAD&&BOOT_PAYLOAD.log)?BOOT_PAYLOAD.log:null);
 let route=null,pid=null,log=null,stream=null,running=false,detector=null,useJsQr=false,last="",lastT=0;
-const APP_VERSION="militopo-participante-v70-entrega-offline-track";
-const APP_SNAPSHOT_KEY="militopo_participant_app_snapshot_v1";
-const APP_EVENT_KEY="militopo_participant_app_event_v1";
-const APP_EVENT_BACKUP_KEY="militopo_participant_app_event_backup_v1";
-const APP_RUN_STATE_KEY="militopo_participant_app_run_state_v1";
-const APP_PERMANENT_EVENT_KEY="militopo_participant_permanent_event_v2";
-const APP_PERMANENT_SNAPSHOT_KEY="militopo_participant_permanent_snapshot_v2";
-const PARTICIPANT_IDB_NAME="MILITOPO_PARTICIPANTE_DB_V1";
+const APP_VERSION="militopo-participante-v71-sync-verificable";
+const APP_SNAPSHOT_KEY="militopo_v1_participant_app_snapshot_v1";
+const APP_EVENT_KEY="militopo_v1_participant_app_event_v1";
+const APP_EVENT_BACKUP_KEY="militopo_v1_participant_app_event_backup_v1";
+const APP_RUN_STATE_KEY="militopo_v1_participant_app_run_state_v1";
+const APP_PERMANENT_EVENT_KEY="militopo_v1_participant_permanent_event_v2";
+const APP_PERMANENT_SNAPSHOT_KEY="militopo_v1_participant_permanent_snapshot_v2";
+const PARTICIPANT_IDB_NAME="MILITOPO_V1_PARTICIPANTE_DB_V1";
 const PARTICIPANT_IDB_STORE="estado";
-const PARTICIPANT_TRACK_JOURNAL_DB="MILITOPO_PARTICIPANTE_TRACK_JOURNAL_V2";
+const PARTICIPANT_TRACK_JOURNAL_DB="MILITOPO_V1_PARTICIPANTE_TRACK_JOURNAL_V1";
 const PARTICIPANT_TRACK_JOURNAL_STORE="points";
 let participantTrackJournalWrite=Promise.resolve();
 let finishedRecoverySyncTimer=null;
+let participantStorageError="";
+let participantPersistentStorageGranted=null;
 
 function participantTrackRaceKey(){
     return [String(EVENT_DATA.eventId||""),String(pid||log?.participantId||""),String(route?.routeId||log?.routeId||""),String(log?.startTime||"")].join("::");
@@ -1769,6 +1771,9 @@ function participantTrackJournalAppend(point,index){
         const db=await participantTrackJournalOpen();
         await new Promise((resolve,reject)=>{const tx=db.transaction(PARTICIPANT_TRACK_JOURNAL_STORE,"readwrite");tx.objectStore(PARTICIPANT_TRACK_JOURNAL_STORE).put(row);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error("No se pudo guardar el punto GPS"));});
         try{db.close()}catch(_){ }
+        const recoveredFromStorageError=!!participantStorageError;
+        participantStorageError="";
+        if(recoveredFromStorageError)notifyMilitopoLive("STORAGE_HEALTH",{storageError:""});
         return true;
     });
     return participantTrackJournalWrite;
@@ -1782,7 +1787,7 @@ async function participantTrackJournalRead(){
         try{db.close()}catch(_){ }
         rows.sort((a,b)=>(Date.parse(a?.point?.timestamp||a?.point?.time||"")||0)-(Date.parse(b?.point?.timestamp||b?.point?.time||"")||0)||Number(a.index||0)-Number(b.index||0));
         return rows.map(row=>row.point).filter(Boolean);
-    }catch(error){console.warn("No se pudo recuperar el diario GPS",error);return []}
+    }catch(error){participantStorageError=String(error?.message||"No se pudo recuperar el diario GPS");console.error("No se pudo recuperar el diario GPS",error);throw error}
 }
 function trackPointIdentity(point){return [String(point?.timestamp||point?.time||""),Number(point?.lat??point?.latitude).toFixed(7),Number(point?.lon??point?.lng??point?.longitude).toFixed(7)].join("|")}
 async function seedTrackJournalFromLog(points,knownIds=new Set()){
@@ -1798,7 +1803,7 @@ async function seedTrackJournalFromLog(points,knownIds=new Set()){
         });
         try{db.close()}catch(_){ }
         return missing.length;
-    }catch(error){console.warn("No se pudo migrar el track anterior al diario GPS",error);return 0}
+    }catch(error){participantStorageError=String(error?.message||"No se pudo migrar el track anterior al diario GPS");console.error("No se pudo migrar el track anterior al diario GPS",error);throw error}
 }
 async function restoreTrackJournalIntoLog(resave=true){
     if(!log?.startTime||!pid)return false;
@@ -1823,10 +1828,16 @@ function scheduleFinishedRecoverySync(delay=700){
     clearTimeout(finishedRecoverySyncTimer);
     finishedRecoverySyncTimer=setTimeout(async()=>{
         if(!log?.finishTime||!route||!pid)return;
-        await restoreTrackJournalIntoLog(true);
-        log.resultPayload=resultPayload();
-        save();
-        notifyMilitopoLive("FINISH",{resultCode:"ORI|RESULT|"+EVENT_DATA.eventId+"|"+pid+"|"+log.resultPayload});
+        try{
+            await restoreTrackJournalIntoLog(true);
+            log.resultPayload=resultPayload();
+            save();
+            notifyMilitopoLive("FINISH",{resultCode:"ORI|RESULT|"+EVENT_DATA.eventId+"|"+pid+"|"+log.resultPayload});
+        }catch(error){
+            participantStorageError=String(error?.message||"No se pudo recuperar el track");
+            notifyMilitopoLive("STORAGE_HEALTH",{storageError:participantStorageError});
+            setParticipantLiveSyncStatus("error","🔴 ERROR AL RECUPERAR EL TRACK · NO BORRES LA CARRERA");
+        }
     },Math.max(0,Number(delay)||0));
 }
 function participantIdbSupported(){return !!window.indexedDB}
@@ -2014,8 +2025,8 @@ function notifyMilitopoLive(kind,extra={}){
     }catch(e){console.warn("MILITOPO LIVE · envío participante",e)}
 }
 
-const JSQR_CACHE_KEY="militopo_jsqr_cache_v1";
-const RUN_WINDOW_PREFIX="MILITOPO_RUN_BACKUP:";
+const JSQR_CACHE_KEY="militopo_v1_jsqr_cache_v1";
+const RUN_WINDOW_PREFIX="MILITOPO_V1_RUN_BACKUP:";
 const RUN_MEMORY={raw:""};
 function readParentUrlSnapshot(){
     try{
@@ -2048,7 +2059,7 @@ function recoverStoredEventDataBeforeInit(){
         push(readParentUrlSnapshot());
         const scan=storage=>{try{for(let i=0;i<storage.length;i++){const k=storage.key(i)||"";if(!/militopo/i.test(k))continue;const raw=storage.getItem(k);if(!raw)continue;try{push(JSON.parse(raw))}catch(e){}}}catch(e){}};
         scan(localStorage);scan(sessionStorage);
-        try{const raw=String(window.name||"");if(raw.startsWith("MILITOPO_PARTICIPANT_SNAPSHOT:"))push(JSON.parse(raw.slice("MILITOPO_PARTICIPANT_SNAPSHOT:".length)));if(raw.startsWith("MILITOPO_RUN_BACKUP:"))push(JSON.parse(raw.slice("MILITOPO_RUN_BACKUP:".length)))}catch(e){}
+        try{const raw=String(window.name||"");if(raw.startsWith("MILITOPO_V1_PARTICIPANT_SNAPSHOT:"))push(JSON.parse(raw.slice("MILITOPO_V1_PARTICIPANT_SNAPSHOT:".length)));if(raw.startsWith("MILITOPO_V1_RUN_BACKUP:"))push(JSON.parse(raw.slice("MILITOPO_V1_RUN_BACKUP:".length)))}catch(e){}
         if(!candidates.length)return false;
         candidates.sort((a,b)=>runScoreForRecovery(b.value?.log||b.value)-runScoreForRecovery(a.value?.log||a.value)||String(b.value?.savedAt||"").localeCompare(String(a.value?.savedAt||"")));
         Object.keys(EVENT_DATA).forEach(k=>delete EVENT_DATA[k]);
@@ -2066,17 +2077,17 @@ function writePermanentParticipantSnapshot(eventData,runLog){
         const snap={savedAt:safeNow(),eventData};
         if(compactLog&&typeof compactLog==="object")snap.log=compactLog;
         const raw=JSON.stringify(snap);
-        [APP_SNAPSHOT_KEY,APP_EVENT_KEY,APP_EVENT_BACKUP_KEY,APP_PERMANENT_SNAPSHOT_KEY,"militopo_participante_recorrido_activo_v1","militopo_participante_recorrido_rescate_v1","militopo_participant_boot_payload_v3","militopo_participant_boot_payload_latest"].forEach(k=>writeKeyEverywhere(k,raw));
+        [APP_SNAPSHOT_KEY,APP_EVENT_KEY,APP_EVENT_BACKUP_KEY,APP_PERMANENT_SNAPSHOT_KEY,"militopo_v1_participante_recorrido_activo_v1","militopo_v1_participante_recorrido_rescate_v1","militopo_v1_participant_boot_payload_v3","militopo_v1_participant_boot_payload_latest"].forEach(k=>writeKeyEverywhere(k,raw));
         writeKeyEverywhere(APP_PERMANENT_EVENT_KEY,JSON.stringify({savedAt:snap.savedAt,eventData}));
         if(compactLog&&compactLog.participantId)writeKeyEverywhere(APP_RUN_STATE_KEY,JSON.stringify(compactLog));
-        try{window.name="MILITOPO_PARTICIPANT_SNAPSHOT:"+raw}catch(e){}
+        try{window.name="MILITOPO_V1_PARTICIPANT_SNAPSHOT:"+raw}catch(e){}
         try{window.parent.postMessage({source:"MILITOPO_PARTICIPANT_APP",action:"PERSIST_SNAPSHOT",payload:{savedAt:snap.savedAt,eventData,log:compactLog}},"*")}catch(e){}
         try{persistParticipantSnapshotAsync(eventData,runLog)}catch(e){}
         updateParentUrlState();
         return true;
     }catch(e){return false}
 }
-function baseKey(){return "militopo_runner_"+EVENT_DATA.eventId}
+function baseKey(){return "militopo_v1_runner_"+EVENT_DATA.eventId}
 function allRecoveryKeys(p){return [baseKey()+"_"+p,baseKey(),baseKey()+"_active",baseKey()+"_backup_"+p,baseKey()+"_backup_last",baseKey()+"_emergency_"+p,baseKey()+"_emergency_last",baseKey()+"_checkpoint_"+p]}
 function normalizeLog(x){
     if(!x||typeof x!=="object")return null;
@@ -2150,7 +2161,19 @@ function updateOfflineSafetyPanel(msg){
     // Bloque de comprobación sin cobertura eliminado por petición del usuario.
     return;
 }
-async function requestPersistentStorage(){try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}}
+async function requestPersistentStorage(){
+    try{
+        if(navigator.storage&&navigator.storage.persist){
+            participantPersistentStorageGranted=await navigator.storage.persist();
+            return participantPersistentStorageGranted;
+        }
+        participantPersistentStorageGranted=false;
+    }catch(error){
+        participantPersistentStorageGranted=false;
+        participantStorageError=String(error?.message||"No se pudo solicitar almacenamiento persistente");
+    }
+    return false;
+}
 async function precacheQrReader(){
     if(window.jsQR)return true;
     try{
@@ -2189,7 +2212,7 @@ async function ensureOfflinePageAvailable(){
         }catch(e){}
     }
     try{
-        const cache=await caches.open("militopo-participante-page-v70-entrega-offline-track");
+        const cache=await caches.open("militopo-v1-participante-page-v71-sync-verificable");
         const pageUrl=location.href.split("#")[0];
         const html="<!DOCTYPE html>\n"+document.documentElement.outerHTML;
         await cache.put(new Request(pageUrl),new Response(html,{headers:{"Content-Type":"text/html;charset=utf-8"}}));
@@ -2371,8 +2394,8 @@ function parse(raw){
 
 /* GPS de proximidad ejecutado dentro del iframe participante */
 const GPS_RADIUS_M=15,GPS_MAX_ACCURACY_M=12,GPS_REQUIRED_HITS=1,GPS_DUPLICATE_COOLDOWN_MS=4000;
-const GPS_PREF_PREFIX="militopo_participant_gps_enabled_v1:";
-const GPS_LOCK_PREF_PREFIX="militopo_participant_gps_lock_v1:";
+const GPS_PREF_PREFIX="militopo_v1_participant_gps_enabled_v1:";
+const GPS_LOCK_PREF_PREFIX="militopo_v1_participant_gps_lock_v1:";
 let gpsWatchId=null,gpsWakeLock=null,gpsInsideHits=0,gpsLastTarget="",gpsLastPosition=null,gpsLastValidatedAt=0,gpsUnlockTimer=null,gpsPrefsRestoredFor="",participantLiveSyncState="inactive",participantPendingSyncCount=0,participantPendingControlSyncCount=0,participantPendingResultSync=false,participantResultReceived=false,participantTrackReceived=false,gpsFinishedByProximity=false,gpsFinishNoticeMode="",gpsFinishNoticeDismissedMode="",gpsFinishInsideHits=0,gpsFinishConfirmOpen=false,gpsFinishDeclinedUntilLeave=false,gpsStartReminderOpen=false,cameraLayoutRestore=null;
 function gpsPrefSuffix(){return String(EVENT_DATA.eventId||"")+":"+String(pid||"pending")}
 function gpsReadPref(prefix){const k=prefix+gpsPrefSuffix();return safeGet(localStorage,k)==="1"||safeGet(sessionStorage,k)==="1"}
@@ -2533,7 +2556,12 @@ window.addEventListener("message",event=>{
         participantPendingResultSync=!!msg.payload.pendingResult;
         participantResultReceived=!!msg.payload.resultReceived;
         participantTrackReceived=!!msg.payload.trackReceived;
-        setParticipantLiveSyncStatus(msg.payload.state,msg.payload.text,msg.payload.lastSyncAt);
+        participantStorageError=String(msg.payload.storageError||participantStorageError||"");
+        setParticipantLiveSyncStatus(participantStorageError?"error":msg.payload.state,participantStorageError?"🔴 ERROR DE ALMACENAMIENTO · NO BORRES LA CARRERA":msg.payload.text,msg.payload.lastSyncAt);
+        if(log&&log.finishTime&&participantResultReceived&&participantTrackReceived){
+            log.deliveryConfirmed={result:true,track:true,confirmedAt:new Date().toISOString(),trackPointCount:Array.isArray(log.track)?log.track.length:0};
+            save();
+        }
         updateDeliveryConfirmations();
         if(log&&log.finishTime&&msg.payload.state==="offline")showGpsFinishNotice("offline");
         if(log&&log.finishTime&&msg.payload.state==="inactive")showGpsFinishNotice("inactive");
@@ -2748,7 +2776,12 @@ function recordRaceTrackPoint(pos,force=false,eventType="gps"){
         if(!Array.isArray(log.track))log.track=[];
         const point={timestamp:new Date(now).toISOString(),lat:+lat.toFixed(7),lon:+lon.toFixed(7),accuracy:Math.round(acc*10)/10,altitude:Number.isFinite(Number(c.altitude))?Math.round(Number(c.altitude)*10)/10:null,speed:Number.isFinite(speed)?Math.round(speed*100)/100:null,heading:Number.isFinite(heading)?Math.round(heading):null,event:eventType||"gps"};
         log.track.push(point);
-        participantTrackJournalAppend(point,log.track.length-1).catch(error=>console.warn("No se pudo escribir el punto en el diario GPS",error));
+        participantTrackJournalAppend(point,log.track.length-1).catch(error=>{
+            participantStorageError=String(error?.message||"No se pudo guardar el punto GPS");
+            notifyMilitopoLive("STORAGE_HEALTH",{storageError:participantStorageError});
+            setParticipantLiveSyncStatus("error","🔴 ERROR AL GUARDAR GPS · MANTÉN LA APP ABIERTA");
+            console.error("No se pudo escribir el punto en el diario GPS",error);
+        });
         if(log.track.length>18000)log.track.splice(0,log.track.length-18000);
         militopoTrackLastSavedAt=now;militopoTrackLastPoint={lat,lon};if(Number.isFinite(heading))militopoTrackLastHeading=heading;
         if(force||log.track.length%4===0)save();
@@ -2896,12 +2929,34 @@ function requestParticipantAppReset(){
     const expected=(route&&route.points||[]).filter(id=>id!=="START"&&id!=="FINISH");
     const completed=log&&Array.isArray(log.scans)?log.scans.filter(scan=>scan.status==="correct").length:0;
     const pending=Number(participantPendingSyncCount||0)||Number(participantPendingControlSyncCount||0)||0;
-    const msg="¿Borrar este recorrido y preparar una nueva prueba?"+(pending>0?"\n\nHay cambios pendientes de sincronizar. Si borras ahora, podrías perderlos.":"")+"\n\nProgreso actual: "+completed+"/"+expected.length+" controles.";
-    if(!confirm(msg))return;
-    performParticipantAppReset();
+    const confirmed=!!(log?.deliveryConfirmed?.result&&log?.deliveryConfirmed?.track&&participantResultReceived&&participantTrackReceived);
+    const payload={
+        eventId:String(EVENT_DATA.eventId||""),participantId:String(pid||""),routeId:String(route?.routeId||""),
+        completedControls:completed,totalControls:expected.length,inProgress:!!(log?.startTime&&!log?.finishTime),
+        finishTime:log?.finishTime||null,pendingSync:pending,pendingResultSync:!!participantPendingResultSync,
+        pendingTrackSync:log?.finishTime&&!participantTrackReceived,resultReceived:!!participantResultReceived,
+        trackReceived:!!participantTrackReceived,safeToReset:!log?.startTime||confirmed,
+        resultCode:log?.resultPayload?("ORI|RESULT|"+EVENT_DATA.eventId+"|"+pid+"|"+log.resultPayload):""
+    };
+    if(window.parent&&window.parent!==window){
+        window.parent.postMessage({source:"MILITOPO_PARTICIPANT_APP",action:"RESET_REQUEST",payload},"*");
+        return;
+    }
+    if(!payload.safeToReset){
+        toast(payload.inProgress?"No se puede borrar durante la carrera.":"Espera a que resultado y track aparezcan confirmados.");
+        if(log?.finishTime)scheduleFinishedRecoverySync(0);
+        return;
+    }
+    if(confirm("Resultado y track están confirmados. ¿Borrar este recorrido y preparar una nueva prueba?"))performParticipantAppReset();
 }
 
 async function performParticipantAppReset(){
+    const confirmed=!log?.startTime||!!(log?.deliveryConfirmed?.result&&log?.deliveryConfirmed?.track&&participantResultReceived&&participantTrackReceived);
+    if(!confirmed){
+        toast(log?.startTime&&!log?.finishTime?"No se puede borrar una carrera en curso.":"Borrado bloqueado hasta confirmar resultado y track.");
+        if(log?.finishTime)scheduleFinishedRecoverySync(0);
+        return false;
+    }
     try{stopProximityGps(true)}catch(e){}
     try{unlockRaceScreen(true)}catch(e){}
     try{stopQrCamera()}catch(e){}
@@ -2911,13 +2966,13 @@ async function performParticipantAppReset(){
     try{
         if("caches" in window){
             const names=await caches.keys();
-            await Promise.all(names.filter(name=>String(name).startsWith("militopo-participante-")||String(name).includes("participante")).map(name=>caches.delete(name)));
+            await Promise.all(names.filter(name=>String(name).startsWith("militopo-v1-participante-")).map(name=>caches.delete(name)));
         }
     }catch(e){}
     try{
         if(window.indexedDB&&indexedDB.databases){
             const dbs=await indexedDB.databases();
-            await Promise.all((dbs||[]).filter(db=>/militopo|participant|participante/i.test(String(db.name||""))).map(db=>new Promise(resolve=>{try{const req=indexedDB.deleteDatabase(db.name);req.onsuccess=req.onerror=req.onblocked=()=>resolve()}catch(e){resolve()}})));
+            await Promise.all((dbs||[]).filter(db=>/^MILITOPO_V1_/i.test(String(db.name||""))).map(db=>new Promise(resolve=>{try{const req=indexedDB.deleteDatabase(db.name);req.onsuccess=req.onerror=req.onblocked=()=>resolve()}catch(e){resolve()}})));
         }
     }catch(e){}
     try{if("serviceWorker" in navigator){const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.filter(r=>String(r.scope||"").includes("/orientacion/participante/")).map(r=>r.unregister().catch(()=>null)));}}catch(e){}
@@ -3008,8 +3063,16 @@ async function finishRace(source="qr"){
     const discarded=new Set(log.scans.filter(s=>s.status==="skipped").map(s=>String(s.controlId)));
     log.missingControls=exp.filter(x=>!done.has(String(x))&&!discarded.has(String(x)));
     recordTrackEvent("finish");
-    await participantTrackJournalWrite.catch(()=>{});
-    await restoreTrackJournalIntoLog(false);
+    try{
+        await participantTrackJournalWrite;
+        await restoreTrackJournalIntoLog(false);
+    }catch(error){
+        participantStorageError=String(error?.message||"No se pudo verificar el track local");
+        notifyMilitopoLive("STORAGE_HEALTH",{storageError:participantStorageError});
+        setParticipantLiveSyncStatus("error","🔴 TRACK LOCAL SIN VERIFICAR · NO CIERRES NI BORRES");
+        toast("No se ha podido verificar el track guardado. Mantén la aplicación abierta e inténtalo de nuevo.");
+        return;
+    }
     log.finishTime=new Date().toISOString();
     log.completed=log.missingControls.length===0&&discarded.size===0;
     log.resultPayload=resultPayload();
