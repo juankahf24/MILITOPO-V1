@@ -1,0 +1,37 @@
+name: Temporary Android emulator kit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/temp-android-emulator-kit.yml'
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Prepare Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            'platform-tools' \
+            'emulator' \
+            'system-images;android-29;default;x86_64'
+          mkdir -p kit/system-images/android-29/default
+          cp -a "$SDK/platform-tools" kit/
+          cp -a "$SDK/emulator" kit/
+          cp -a "$SDK/system-images/android-29/default/x86_64" kit/system-images/android-29/default/
+          printf 'sdk.dir=%s\n' "$SDK" > kit/source-sdk.txt
+          du -sh kit/* kit/system-images/android-29/default/x86_64 || true
+      - name: Upload emulator kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-kit-api29
+          path: kit
+          if-no-files-found: error
+          retention-days: 1
