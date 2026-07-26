@@ -1,4 +1,4 @@
-name: Temporary bundletool artifact
+name: Temporary Android verification tools
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  bundletool:
+  tools:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -20,12 +20,24 @@ jobs:
             https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
           test -s bundletool-all-1.18.3.jar
           sha256sum bundletool-all-1.18.3.jar > bundletool-all-1.18.3.jar.sha256
-      - name: Upload bundletool
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install official Android Build Tools
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'build-tools;36.0.0'
+          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          tar -C "$ANDROID_HOME/build-tools" -czf android-build-tools-36.0.0.tar.gz 36.0.0
+          sha256sum android-build-tools-36.0.0.tar.gz > android-build-tools-36.0.0.tar.gz.sha256
+      - name: Upload verification tools
         uses: actions/upload-artifact@v4
         with:
-          name: bundletool-1.18.3
+          name: android-verification-tools
           path: |
             bundletool-all-1.18.3.jar
             bundletool-all-1.18.3.jar.sha256
+            android-build-tools-36.0.0.tar.gz
+            android-build-tools-36.0.0.tar.gz.sha256
           if-no-files-found: error
           retention-days: 1
