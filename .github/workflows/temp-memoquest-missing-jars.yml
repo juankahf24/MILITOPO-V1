@@ -1,4 +1,4 @@
-name: Temporary MemoQuest missing Android jars
+name: Temporary MemoQuest missing Android artifacts
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  jars:
+  artifacts:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -16,14 +16,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir jars
-          curl --fail --location --retry 3 -o jars/resourceinspection-annotation-1.0.1.jar https://dl.google.com/dl/android/maven2/androidx/resourceinspection/resourceinspection-annotation/1.0.1/resourceinspection-annotation-1.0.1.jar
-          curl --fail --location --retry 3 -o jars/concurrent-futures-1.1.0.jar https://dl.google.com/dl/android/maven2/androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar
-          sha256sum jars/*.jar > jars/SHA256SUMS.txt
-      - name: Upload jars
+          mkdir -p artifacts
+          curl --fail --location --retry 3 -o artifacts/resourceinspection-annotation-1.0.1.jar https://dl.google.com/dl/android/maven2/androidx/resourceinspection/resourceinspection-annotation/1.0.1/resourceinspection-annotation-1.0.1.jar
+          curl --fail --location --retry 3 -o artifacts/concurrent-futures-1.1.0.jar https://dl.google.com/dl/android/maven2/androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar
+          curl --fail --location --retry 3 -o artifacts/core-splashscreen-1.0.1.aar https://dl.google.com/dl/android/maven2/androidx/core/core-splashscreen/1.0.1/core-splashscreen-1.0.1.aar
+          curl --fail --location --retry 3 -o artifacts/core-splashscreen-1.0.1.pom https://dl.google.com/dl/android/maven2/androidx/core/core-splashscreen/1.0.1/core-splashscreen-1.0.1.pom
+          sha256sum artifacts/* > artifacts/SHA256SUMS.txt
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: memoquest-missing-androidx-jars
-          path: jars
+          name: memoquest-missing-androidx-artifacts
+          path: artifacts
           if-no-files-found: error
           retention-days: 1
