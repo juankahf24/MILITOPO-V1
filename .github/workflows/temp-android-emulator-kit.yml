@@ -1,4 +1,4 @@
-name: Temporary Android emulator kit split
+name: Temporary Android API35 emulator image split
 
 on:
   pull_request:
@@ -12,72 +12,59 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Prepare Android SDK packages
+      - name: Prepare Android API35 system image
         shell: bash
         run: |
           set -euo pipefail
           SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            'platform-tools' \
-            'emulator' \
-            'system-images;android-29;default;x86_64'
-          mkdir -p kit/system-images/android-29/default
-          cp -a "$SDK/platform-tools" kit/
-          cp -a "$SDK/emulator" kit/
-          cp -a "$SDK/system-images/android-29/default/x86_64" kit/system-images/android-29/default/
-          printf 'sdk.dir=%s\n' "$SDK" > kit/source-sdk.txt
-          tar -I 'zstd -10 -T0' -cf android-emulator-kit-api29.tar.zst kit
-          mkdir parts
-          split -b 240M -d -a 2 android-emulator-kit-api29.tar.zst parts/part-
-          sha256sum parts/part-* > parts/SHA256SUMS.txt
-          ls -lh parts
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-35;aosp_atd;x86_64'
+          mkdir -p kit/system-images/android-35/aosp_atd
+          cp -a "$SDK/system-images/android-35/aosp_atd/x86_64" kit/system-images/android-35/aosp_atd/
+          tar -I 'zstd -10 -T0' -cf android-api35-aosp-atd.tar.zst kit
+          mkdir parts35
+          split -b 240M -d -a 2 android-api35-aosp-atd.tar.zst parts35/part-
+          sha256sum parts35/part-* > parts35/SHA256SUMS.txt
+          ls -lh parts35
       - name: Upload metadata
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-kit-metadata
-          path: parts/SHA256SUMS.txt
+          name: api35-image-metadata
+          path: parts35/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 1
       - name: Upload part 00
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-kit-part-00
-          path: parts/part-00
+          name: api35-image-part-00
+          path: parts35/part-00
           if-no-files-found: error
           retention-days: 1
       - name: Upload part 01
-        if: ${{ hashFiles('parts/part-01') != '' }}
+        if: ${{ hashFiles('parts35/part-01') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-kit-part-01
-          path: parts/part-01
+          name: api35-image-part-01
+          path: parts35/part-01
           retention-days: 1
       - name: Upload part 02
-        if: ${{ hashFiles('parts/part-02') != '' }}
+        if: ${{ hashFiles('parts35/part-02') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-kit-part-02
-          path: parts/part-02
+          name: api35-image-part-02
+          path: parts35/part-02
           retention-days: 1
       - name: Upload part 03
-        if: ${{ hashFiles('parts/part-03') != '' }}
+        if: ${{ hashFiles('parts35/part-03') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-kit-part-03
-          path: parts/part-03
+          name: api35-image-part-03
+          path: parts35/part-03
           retention-days: 1
       - name: Upload part 04
-        if: ${{ hashFiles('parts/part-04') != '' }}
+        if: ${{ hashFiles('parts35/part-04') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-kit-part-04
-          path: parts/part-04
-          retention-days: 1
-      - name: Upload part 05
-        if: ${{ hashFiles('parts/part-05') != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: emulator-kit-part-05
-          path: parts/part-05
+          name: api35-image-part-04
+          path: parts35/part-04
           retention-days: 1
