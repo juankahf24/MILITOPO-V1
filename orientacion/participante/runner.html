@@ -2057,7 +2057,7 @@ function recoverStoredEventDataBeforeInit(){
         const candidates=[];
         const push=value=>{try{if(value&&typeof value==="object"){const eventData=value.eventData||value;if(isUsableEventData(eventData))candidates.push({eventData,value})}}catch(e){}};
         push(readParentUrlSnapshot());
-        const scan=storage=>{try{for(let i=0;i<storage.length;i++){const k=storage.key(i)||"";if(!/militopo/i.test(k))continue;const raw=storage.getItem(k);if(!raw)continue;try{push(JSON.parse(raw))}catch(e){}}}catch(e){}};
+        const scan=storage=>{try{for(let i=0;i<storage.length;i++){const k=storage.key(i)||"";if(!/militopo_v1/i.test(k))continue;const raw=storage.getItem(k);if(!raw)continue;try{push(JSON.parse(raw))}catch(e){}}}catch(e){}};
         scan(localStorage);scan(sessionStorage);
         try{const raw=String(window.name||"");if(raw.startsWith("MILITOPO_V1_PARTICIPANT_SNAPSHOT:"))push(JSON.parse(raw.slice("MILITOPO_V1_PARTICIPANT_SNAPSHOT:".length)));if(raw.startsWith("MILITOPO_V1_RUN_BACKUP:"))push(JSON.parse(raw.slice("MILITOPO_V1_RUN_BACKUP:".length)))}catch(e){}
         if(!candidates.length)return false;
