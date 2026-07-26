@@ -88,7 +88,7 @@
       try{
         for(let i=0;i<storage.length;i++){
           const key=storage.key(i)||"";
-          if(!/militopo/i.test(key))continue;
+          if(!/militopo_v1/i.test(key))continue;
           const raw=storage.getItem(key); if(!raw)continue;
           try{pushValue(JSON.parse(raw));}catch(_){ }
         }
