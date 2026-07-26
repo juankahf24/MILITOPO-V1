@@ -1,5 +1,5 @@
-/* MILITOPO Orientación · V70 entrega offline garantizada de resultado y track */
-const MILITOPO_CACHE = "militopo-v1-orientacion-v71-sync-verificable";
+/* MILITOPO Orientación · V72 seguimiento en vivo coherente */
+const MILITOPO_CACHE = "militopo-v1-orientacion-v72-seguimiento-en-vivo";
 const CORE_ASSETS = [
   "./",
   "./index.html",
