@@ -1,0 +1,29 @@
+name: Temporary MemoQuest missing Android jars
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/temp-memoquest-missing-jars.yml'
+  workflow_dispatch:
+
+jobs:
+  jars:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download exact AndroidX artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir jars
+          curl --fail --location --retry 3 -o jars/resourceinspection-annotation-1.0.1.jar https://dl.google.com/dl/android/maven2/androidx/resourceinspection/resourceinspection-annotation/1.0.1/resourceinspection-annotation-1.0.1.jar
+          curl --fail --location --retry 3 -o jars/concurrent-futures-1.1.0.jar https://dl.google.com/dl/android/maven2/androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar
+          sha256sum jars/*.jar > jars/SHA256SUMS.txt
+      - name: Upload jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: memoquest-missing-androidx-jars
+          path: jars
+          if-no-files-found: error
+          retention-days: 1
