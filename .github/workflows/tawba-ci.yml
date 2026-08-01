@@ -74,6 +74,8 @@ jobs:
           cp "$APKSIG_JAR" /tmp/android-signing-tools/apksig.jar
           cp "$ZIPALIGN" /tmp/android-signing-tools/zipalign
           BUILD_TOOLS_DIR=$(dirname "$ZIPALIGN")
+          test -s "$BUILD_TOOLS_DIR/lib/apksigner.jar"
+          cp "$BUILD_TOOLS_DIR/lib/apksigner.jar" /tmp/android-signing-tools/apksigner.jar
           if [ -f "$BUILD_TOOLS_DIR/lib64/libc++.so" ]; then cp "$BUILD_TOOLS_DIR/lib64/libc++.so" /tmp/android-signing-tools/lib64/libc++.so; fi
           chmod +x /tmp/android-signing-tools/zipalign
 
