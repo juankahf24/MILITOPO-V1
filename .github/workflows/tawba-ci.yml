@@ -62,6 +62,21 @@ jobs:
           unzip -l "$APK" | grep -q "classes.dex"
           sha256sum "$APK" > /tmp/tawba-unsigned-sha256.txt
 
+      - name: Export Android signing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/android-signing-tools/lib64
+          APKSIG_JAR=$(find "$HOME/.gradle/caches/modules-2/files-2.1/com.android.tools.build/apksig" -type f -name 'apksig-*.jar' | sort | tail -1)
+          ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort | tail -1)
+          test -s "$APKSIG_JAR"
+          test -x "$ZIPALIGN"
+          cp "$APKSIG_JAR" /tmp/android-signing-tools/apksig.jar
+          cp "$ZIPALIGN" /tmp/android-signing-tools/zipalign
+          BUILD_TOOLS_DIR=$(dirname "$ZIPALIGN")
+          if [ -f "$BUILD_TOOLS_DIR/lib64/libc++.so" ]; then cp "$BUILD_TOOLS_DIR/lib64/libc++.so" /tmp/android-signing-tools/lib64/libc++.so; fi
+          chmod +x /tmp/android-signing-tools/zipalign
+
       - name: Upload unsigned APK
         uses: actions/upload-artifact@v4
         with:
@@ -69,5 +84,13 @@ jobs:
           path: |
             /tmp/tawba/app/build/outputs/apk/release/app-release-unsigned.apk
             /tmp/tawba-unsigned-sha256.txt
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload Android signing tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-signing-tools
+          path: /tmp/android-signing-tools
           if-no-files-found: error
           retention-days: 3
