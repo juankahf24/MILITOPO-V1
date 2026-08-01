@@ -1,0 +1,68 @@
+name: Tawba Android Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tawba-ci/**"
+      - ".github/workflows/tawba-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout isolated build branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Rebuild exact Tawba source project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat tawba-ci/xz/xz* | base64 -d > /tmp/tawba-project.tar.xz
+          echo "6a4268d96590a6dd1b624e5aadec38aec7e6aafed4916551b2272d79665962b4  /tmp/tawba-project.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/tawba
+          tar -xJf /tmp/tawba-project.tar.xz -C /tmp/tawba
+          test -f /tmp/tawba/settings.gradle
+          test -f /tmp/tawba/app/src/main/AndroidManifest.xml
+
+      - name: Build release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/tawba
+          gradle :app:assembleRelease --stacktrace --no-daemon
+
+      - name: Verify unsigned APK structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/tawba/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          unzip -t "$APK"
+          unzip -l "$APK" | grep -q "classes.dex"
+          sha256sum "$APK" > /tmp/tawba-unsigned-sha256.txt
+
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tawba-v3.6.0-unsigned
+          path: |
+            /tmp/tawba/app/build/outputs/apk/release/app-release-unsigned.apk
+            /tmp/tawba-unsigned-sha256.txt
+          if-no-files-found: error
+          retention-days: 3
