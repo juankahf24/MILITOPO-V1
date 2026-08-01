@@ -1,6 +1,11 @@
 name: Tawba Android Build
 
 on:
+  push:
+    branches: [tawba-3-6-build]
+    paths:
+      - "tawba-ci/**"
+      - ".github/workflows/tawba-ci.yml"
   pull_request:
     branches: [main]
     paths:
