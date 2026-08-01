@@ -79,6 +79,25 @@ jobs:
           if [ -f "$BUILD_TOOLS_DIR/lib64/libc++.so" ]; then cp "$BUILD_TOOLS_DIR/lib64/libc++.so" /tmp/android-signing-tools/lib64/libc++.so; fi
           chmod +x /tmp/android-signing-tools/zipalign
 
+      - name: Export Android compile tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMPILE_DIR=/tmp/android-compile-tools
+          mkdir -p "$COMPILE_DIR/platform" "$COMPILE_DIR/build-tools/lib" "$COMPILE_DIR/build-tools/lib64"
+          BUILD_TOOLS_DIR=$(dirname "$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 | sort | tail -1)")
+          test -x "$BUILD_TOOLS_DIR/aapt2"
+          test -x "$BUILD_TOOLS_DIR/d8"
+          test -s "$BUILD_TOOLS_DIR/lib/d8.jar"
+          test -s "$ANDROID_HOME/platforms/android-36/android.jar"
+          cp "$BUILD_TOOLS_DIR/aapt2" "$COMPILE_DIR/build-tools/aapt2"
+          cp "$BUILD_TOOLS_DIR/d8" "$COMPILE_DIR/build-tools/d8"
+          cp "$BUILD_TOOLS_DIR/lib/d8.jar" "$COMPILE_DIR/build-tools/lib/d8.jar"
+          cp "$ANDROID_HOME/platforms/android-36/android.jar" "$COMPILE_DIR/platform/android.jar"
+          if [ -f "$BUILD_TOOLS_DIR/lib64/libc++.so" ]; then cp "$BUILD_TOOLS_DIR/lib64/libc++.so" "$COMPILE_DIR/build-tools/lib64/libc++.so"; fi
+          chmod +x "$COMPILE_DIR/build-tools/aapt2" "$COMPILE_DIR/build-tools/d8"
+          printf '%s\n' "$BUILD_TOOLS_DIR" > "$COMPILE_DIR/source-build-tools.txt"
+
       - name: Upload unsigned APK
         uses: actions/upload-artifact@v4
         with:
@@ -94,5 +113,13 @@ jobs:
         with:
           name: android-signing-tools
           path: /tmp/android-signing-tools
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload Android compile tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-compile-tools
+          path: /tmp/android-compile-tools
           if-no-files-found: error
           retention-days: 3
