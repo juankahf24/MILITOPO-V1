@@ -67,9 +67,6 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         warningsAsErrors = true
-        sarifReport = true
-        htmlReport = true
-        textReport = true
     }
 
     testOptions {
