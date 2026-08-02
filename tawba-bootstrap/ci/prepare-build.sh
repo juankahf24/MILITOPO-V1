@@ -10,7 +10,7 @@ mkdir -p "$PROJECT" "$QA"
 
 cat tawba-bootstrap/source.zip.b64.part* | base64 --decode > /tmp/tawba-source.zip
 python3 - <<'PY'
-from pathlib import import Path
+from pathlib import Path
 import zipfile
 archive = Path('/tmp/tawba-source.zip')
 target = Path('tawba-android')
