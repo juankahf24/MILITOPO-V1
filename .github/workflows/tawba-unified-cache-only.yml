@@ -3,6 +3,10 @@ name: Tawba Unified Cache Only
 on:
   push:
     branches: [tawba-unified-cache-only-20260802]
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/tawba-unified-cache-only.yml'
 
 permissions:
   contents: read
