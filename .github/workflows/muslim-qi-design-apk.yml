@@ -6,6 +6,7 @@ on:
     paths:
       - 'muslim-qi-design/**'
       - '.github/workflows/muslim-qi-design-apk.yml'
+      - '.github/scripts/muslim-qi-smoke-test.sh'
 
 permissions:
   contents: read
@@ -45,7 +46,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install, launch and capture diagnostics
+      - name: Install, launch and test interaction
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -53,24 +54,7 @@ jobs:
           target: google_apis
           profile: pixel_6
           disable-animations: true
-          script: |
-            set +e
-            adb install -r muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
-            adb shell am force-stop com.muslimqi.design.demo
-            adb logcat -c
-            adb shell am start -W -n com.muslimqi.design.demo/com.muslimqi.design.MainActivity
-            sleep 7
-            adb exec-out screencap -p > muslim-qi-launch.png
-            adb logcat -d -v threadtime > muslim-qi-logcat.txt
-            APP_PID="$(adb shell pidof com.muslimqi.design.demo | tr -d '\r')"
-            echo "APP_PID=$APP_PID"
-            if [ -z "$APP_PID" ]; then
-              echo 'Application process stopped. Relevant crash log:'
-              grep -A 80 -B 15 -E 'FATAL EXCEPTION|AndroidRuntime|Process: com.muslimqi.design.demo' muslim-qi-logcat.txt || true
-              exit 1
-            fi
-            adb shell dumpsys activity activities | grep 'com.muslimqi.design.demo/com.muslimqi.design.MainActivity'
-            test -s muslim-qi-launch.png
+          script: bash .github/scripts/muslim-qi-smoke-test.sh
 
       - name: Upload diagnostics
         if: always()
@@ -78,7 +62,8 @@ jobs:
         with:
           name: Muslim-QI-Diagnostics
           path: |
-            muslim-qi-launch.png
+            muslim-qi-language-screen.png
+            muslim-qi-after-interaction.png
             muslim-qi-logcat.txt
           if-no-files-found: warn
           retention-days: 1
