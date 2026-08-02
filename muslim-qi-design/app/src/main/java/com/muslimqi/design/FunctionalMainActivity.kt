@@ -37,6 +37,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -885,6 +887,7 @@ private fun OnboardingScreen(onFinished: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(250.dp)
+                .premiumReentry("onboarding-visual-$slide")
                 .shadow(16.dp, RoundedCornerShape(32.dp)),
             shape = RoundedCornerShape(32.dp),
             color = MqTeal
@@ -929,7 +932,9 @@ private fun OnboardingScreen(onFinished: () -> Unit) {
         }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .premiumReentry("onboarding-copy-$slide")
         ) {
             Text(
                 titles[slide],
@@ -1244,6 +1249,11 @@ private fun BottomNavigationBar(
                                 scaleY = navigationScale
                                 translationY = navigationLift
                             }
+                            .graphicsLayer {
+                                scaleX = navigationScale
+                                scaleY = navigationScale
+                                translationY = navigationLift
+                            }
                             .clip(RoundedCornerShape(15.dp))
                             .background(
                                 if (active) MaterialTheme.colorScheme.primaryContainer
@@ -1525,6 +1535,7 @@ private fun DailyLearningCard(onClick: () -> Unit) {
                     Offset(size.width, 0f)
                 )
             }
+            PremiumShimmerSweep(Modifier.matchParentSize())
             Column(
                 Modifier
                     .fillMaxSize()
@@ -2533,12 +2544,18 @@ private fun MemoryGameScreen(
         AlertDialog(
             onDismissRequest = {},
             icon = {
-                Icon(
-                    Icons.Rounded.EmojiEvents,
-                    null,
-                    tint = MqGold,
-                    modifier = Modifier.size(44.dp)
-                )
+                Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
+                    PremiumSuccessSparkles(
+                        visible = true,
+                        modifier = Modifier.matchParentSize()
+                    )
+                    Icon(
+                        Icons.Rounded.EmojiEvents,
+                        null,
+                        tint = MqGold,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
             },
             title = {
                 Text("Grille terminée !", fontWeight = FontWeight.ExtraBold)
@@ -2639,6 +2656,10 @@ private fun MemoryCard(
                 ),
             contentAlignment = Alignment.Center
         ) {
+            PremiumSuccessSparkles(
+                visible = matched,
+                modifier = Modifier.matchParentSize()
+            )
             if (!showFront) {
                 Canvas(Modifier.fillMaxSize()) {
                     val center = Offset(size.width / 2, size.height / 2)
