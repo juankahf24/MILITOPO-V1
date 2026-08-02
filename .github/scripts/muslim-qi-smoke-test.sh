@@ -31,15 +31,22 @@ adb shell cat /sdcard/muslim-qi-ui.xml > muslim-qi-ui.xml
 grep -q "4 × 7" muslim-qi-ui.xml
 grep -q "Paires" muslim-qi-ui.xml
 
-# Exercise two real card taps and verify the process remains alive.
-adb shell input tap 135 520
-adb shell input tap 405 520
-sleep 2
+# Pixel 6 native resolution is 1080 x 2400. Tap the centres of cards 1 and 2.
+adb shell input tap 145 650
+sleep 1
+adb shell input tap 410 650
+sleep 1
 SECOND_PID="$(adb shell pidof "$PACKAGE" | tr -d '\r')"
 test -n "$SECOND_PID"
+
+# A completed comparison must increment the attempt counter from 0 to 1.
+adb shell uiautomator dump /sdcard/muslim-qi-after.xml >/dev/null
+adb shell cat /sdcard/muslim-qi-after.xml > muslim-qi-after.xml
+grep -q 'text="Essais"' muslim-qi-after.xml
+grep -q 'text="1"' muslim-qi-after.xml
+
 adb exec-out screencap -p > muslim-qi-after-interaction.png
 test -s muslim-qi-after-interaction.png
-
 adb logcat -d -v threadtime > muslim-qi-logcat.txt
 if grep -q "FATAL EXCEPTION.*com.muslimqi.design.demo" muslim-qi-logcat.txt; then
   grep -A 100 -B 20 -E 'FATAL EXCEPTION|AndroidRuntime|Process: com.muslimqi.design.demo' muslim-qi-logcat.txt || true
