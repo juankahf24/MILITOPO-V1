@@ -6,7 +6,7 @@ QA='docs/qa'
 PACKAGE='com.tawba.app.phase1.debug'
 
 gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest \
-  | tee "$QA/instrumented-tests.log"
+  2>&1 | tee "$QA/instrumented-tests.log"
 
 adb shell pm clear "$PACKAGE"
 adb logcat -c
