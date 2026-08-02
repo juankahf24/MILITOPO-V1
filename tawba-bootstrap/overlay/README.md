@@ -18,8 +18,8 @@ Application Android native Kotlin/Jetpack Compose consacrée au socle Coran hors
 
 - Android Gradle Plugin 9.3.1 ;
 - Kotlin 2.4.10 et Java 17 ;
-- compileSdk/targetSdk 37 ;
-- Jetpack Compose BOM 2026.06.00 ;
+- compileSdk/targetSdk 36 ;
+- Jetpack Compose BOM 2025.12.00 ;
 - DataStore Preferences avec traitement de corruption ;
 - SQLite embarqué, en lecture seule, copié atomiquement et contrôlé avant ouverture ;
 - build `qa` optimisé par R8 et signé avec la clé de débogage uniquement pour installation de validation.
