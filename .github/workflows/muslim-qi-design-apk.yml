@@ -13,7 +13,7 @@ permissions:
 jobs:
   build-design-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,14 +29,20 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Build installable debug APK
+      - name: Compile, lint and package
         working-directory: muslim-qi-design
-        run: gradle --no-daemon --stacktrace assembleDebug
+        run: gradle --no-daemon --stacktrace clean lintDebug assembleDebug
+
+      - name: Verify APK structure
+        run: |
+          test -f muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
+          unzip -t muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Muslim-QI-Design-APK
+          name: Muslim-QI-Modern-Design-APK
           path: muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 1
