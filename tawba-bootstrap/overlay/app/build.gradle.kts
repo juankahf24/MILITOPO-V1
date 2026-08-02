@@ -67,9 +67,10 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         warningsAsErrors = true
-        // AGP 9.3.1 connaît l'API 37, mais cette plateforme n'est pas publiée
-        // par le dépôt SDK du runner. API 36 reste donc la cible vérifiable.
-        disable += "OldTargetApi"
+        // AGP 9.3.1 connaît l'API 37 et des Jetpack associés, mais la plateforme
+        // android-37 n'est pas distribuée par le dépôt SDK du runner. Le socle est
+        // donc épinglé aux dernières versions réellement compatibles avec API 36.
+        disable += setOf("OldTargetApi", "GradleDependency")
     }
 
     testOptions {
