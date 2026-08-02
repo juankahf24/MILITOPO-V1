@@ -2,12 +2,15 @@ package com.muslimqi.design
 
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -23,10 +26,14 @@ import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -74,6 +81,27 @@ internal fun premiumScreenTransform(forward: Boolean): ContentTransform {
     )
 
     return (enter togetherWith exit).using(SizeTransform(clip = false))
+}
+
+internal fun Modifier.premiumReentry(key: Any): Modifier = composed {
+    val progress = remember { Animatable(1f) }
+    LaunchedEffect(key) {
+        progress.snapTo(0f)
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        )
+    }
+    graphicsLayer {
+        alpha = progress.value
+        translationX = (1f - progress.value) * 58f
+        translationY = (1f - progress.value) * 16f
+        scaleX = 0.96f + progress.value * 0.04f
+        scaleY = 0.96f + progress.value * 0.04f
+    }
 }
 
 @Composable
@@ -270,4 +298,78 @@ internal fun PremiumActionIcon(
             translationX = travel
         }
     )
+}
+
+@Composable
+internal fun PremiumShimmerSweep(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "premium_shimmer")
+    val progress by transition.animateFloat(
+        initialValue = -1.1f,
+        targetValue = 2.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "premium_shimmer_progress"
+    )
+    Canvas(modifier = modifier) {
+        val width = size.width * 0.28f
+        val centerX = size.width * progress
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color.White.copy(alpha = 0.075f),
+                    Color.White.copy(alpha = 0.18f),
+                    Color.White.copy(alpha = 0.075f),
+                    Color.Transparent
+                ),
+                start = Offset(centerX - width, 0f),
+                end = Offset(centerX + width, size.height)
+            )
+        )
+    }
+}
+
+@Composable
+internal fun PremiumSuccessSparkles(
+    visible: Boolean,
+    modifier: Modifier = Modifier
+) {
+    if (!visible) return
+    val transition = rememberInfiniteTransition(label = "success_sparkles")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "success_sparkles_rotation"
+    )
+    val pulse by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "success_sparkles_pulse"
+    )
+    Canvas(modifier = modifier) {
+        val centerPoint = center
+        val radius = size.minDimension * 0.37f
+        repeat(8) { index ->
+            val angle = Math.toRadians((rotation + index * 45f).toDouble())
+            val point = Offset(
+                x = centerPoint.x + kotlin.math.cos(angle).toFloat() * radius,
+                y = centerPoint.y + kotlin.math.sin(angle).toFloat() * radius
+            )
+            drawCircle(
+                color = Color(0xFFE0B94D).copy(alpha = 0.35f * pulse),
+                radius = (if (index % 2 == 0) 4f else 2.6f) * pulse,
+                center = point
+            )
+        }
+    }
 }
