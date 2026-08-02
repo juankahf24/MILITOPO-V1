@@ -6,8 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.material3.Text
 import com.batoulapps.adhan.CalculationMethod
 import com.batoulapps.adhan.Coordinates
-import com.batoulapps.adhan.DateComponents
 import com.batoulapps.adhan.PrayerTimes
+import com.batoulapps.adhan.data.DateComponents
 import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
