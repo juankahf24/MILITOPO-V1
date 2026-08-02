@@ -1,27 +1,34 @@
-# Tawba 4.0 — Phase 1
+# Tawba 4.0 — Phase 1 propre
 
-Reconstruction Android native de Tawba centrée sur une base vérifiable : accueil Compose, corpus coranique local, 114 sourates, lecteur RTL, recherche normalisée séparée du texte affiché, signets, reprise de lecture, cinq polices arabes et thèmes Ivoire, Nuit et AMOLED.
+Application Android native Kotlin/Jetpack Compose consacrée au socle Coran hors connexion.
 
-## Principes de sûreté religieuse
+## Périmètre effectivement livré
 
-- Le texte affiché provient exclusivement de `assets/databases/tawba.db`.
-- Aucun verset et aucune Basmala ne sont codés en dur dans l’interface.
-- La normalisation est limitée à l’index de recherche.
-- Le corpus est régénéré depuis une révision épinglée puis contrôlé avant chaque build CI.
-- La certification mot à mot par rapport à une édition canonique externe reste explicitement non vérifiée.
+- écran d’accueil premium et adaptatif ;
+- 114 sourates et 6 236 versets embarqués ;
+- navigation par sourate, verset, page et juz via les métadonnées locales ;
+- recherche arabe normalisée sans altérer le texte affiché ;
+- signets et reprise automatique de lecture ;
+- cinq polices arabes embarquées avec leurs licences ;
+- thèmes ivoire, nuit et AMOLED ;
+- validation du corpus au démarrage ;
+- fonctionnement hors connexion, sans permission réseau, localisation ou notification.
 
-## Environnement de build validé
+## Socle technique
 
-- JDK 17
-- Gradle 9.5
-- Android Gradle Plugin 9.3.0
-- Kotlin / Compose Compiler 2.3.21
-- compileSdk 36
-- targetSdk 36
-- Build Tools 36.0.0
+- Android Gradle Plugin 9.3.1 ;
+- Kotlin 2.4.10 et Java 17 ;
+- compileSdk/targetSdk 37 ;
+- Jetpack Compose BOM 2026.06.00 ;
+- DataStore Preferences avec traitement de corruption ;
+- SQLite embarqué, en lecture seule, copié atomiquement et contrôlé avant ouverture ;
+- build `qa` optimisé par R8 et signé avec la clé de débogage uniquement pour installation de validation.
+
+## Commandes
 
 ```bash
-gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleQa
+gradle :app:connectedDebugAndroidTest
 ```
 
-L’APK de test utilise `com.tawba.app.phase1`, afin de ne pas écraser Tawba 3.5.0. La future publication conservera `com.tawba.app` et nécessitera la clé historique ou la configuration Play App Signing autorisée.
+La signature de production historique n’est pas incluse. Le package installable de validation est `com.tawba.app.phase1` afin de ne pas remplacer une éventuelle version publiée.
