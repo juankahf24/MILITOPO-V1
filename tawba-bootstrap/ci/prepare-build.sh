@@ -10,7 +10,7 @@ mkdir -p "$PROJECT" "$QA"
 
 cat tawba-bootstrap/source.zip.b64.part* | base64 --decode > /tmp/tawba-source.zip
 python3 - <<'PY'
-from pathlib import Path
+from pathlib import import Path
 import zipfile
 archive = Path('/tmp/tawba-source.zip')
 target = Path('tawba-android')
@@ -28,8 +28,6 @@ PY
 cat tawba-bootstrap/clean-overlay.b64.part* | base64 --decode > /tmp/tawba-clean-overlay.tar.gz
 echo 'e6863d0c92ab0737258cf3085baae019f3b80ad7b03f31f07396c4f33f9c2f83  /tmp/tawba-clean-overlay.tar.gz' | sha256sum --check
 tar -xzf /tmp/tawba-clean-overlay.tar.gz -C "$PROJECT"
-# Les fichiers texte de l'overlay versionné sont appliqués en dernier : ils
-# définissent la configuration API réellement reproductible et la documentation.
 cp -a tawba-bootstrap/overlay/. "$PROJECT/"
 rm -f "$PROJECT/app/lint-baseline.xml"
 test -f "$PROJECT/app/src/main/assets/licenses/QURAN-CORPUS-NOTICE.txt"
@@ -77,7 +75,7 @@ gradle --no-daemon --stacktrace \
   :app:lintDebug \
   :app:assembleDebug \
   :app:assembleQa \
-  | tee "$QA/gradle-build.log"
+  2>&1 | tee "$QA/gradle-build.log"
 
 cp app/build/reports/lint-results-debug.html "$QA/"
 cp app/build/reports/lint-results-debug.sarif "$QA/"
