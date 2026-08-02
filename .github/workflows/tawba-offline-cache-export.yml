@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: tawba-offline-cache-export
+  cancel-in-progress: true
+
 jobs:
   export-cache:
     runs-on: ubuntu-latest
@@ -45,11 +49,9 @@ jobs:
         run: |
           set -euo pipefail
           root=/tmp/tawba-warmup
-          mkdir -p "$root/app/src/main/java/com/tawba/warmup" "$root/app/src/main"
+          mkdir -p "$root/app/src/main/java/com/tawba/warmup" "$root/app/src/main/res/values"
           cat > "$root/settings.gradle.kts" <<'EOF'
-          pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
-          }
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories { google(); mavenCentral() }
@@ -130,7 +132,6 @@ jobs:
               </application>
           </manifest>
           EOF
-          mkdir -p "$root/app/src/main/res/values"
           cat > "$root/app/src/main/res/values/styles.xml" <<'EOF'
           <resources><style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar" /></resources>
           EOF
@@ -165,17 +166,17 @@ jobs:
           cp -a "$HOME/.gradle/native" "$root/" 2>/dev/null || true
           cp /tmp/warmup-build.log "$root/"
           du -sh "$root" | tee "$root/size.txt"
-          tar -C /tmp -cJf /tmp/tawba-gradle-cache.tar.xz tawba-gradle-cache
-          sha256sum /tmp/tawba-gradle-cache.tar.xz > /tmp/tawba-gradle-cache.sha256
-          ls -lh /tmp/tawba-gradle-cache.tar.xz
+          tar -C /tmp -cf /tmp/tawba-gradle-cache.tar tawba-gradle-cache
+          sha256sum /tmp/tawba-gradle-cache.tar > /tmp/tawba-gradle-cache.sha256
+          ls -lh /tmp/tawba-gradle-cache.tar
 
       - name: Upload offline Gradle cache
         uses: actions/upload-artifact@v4
         with:
           name: Tawba-Offline-Gradle-Cache
           path: |
-            /tmp/tawba-gradle-cache.tar.xz
+            /tmp/tawba-gradle-cache.tar
             /tmp/tawba-gradle-cache.sha256
           if-no-files-found: error
-          compression-level: 0
+          compression-level: 6
           retention-days: 3
