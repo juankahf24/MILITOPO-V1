@@ -67,6 +67,9 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         warningsAsErrors = true
+        // AGP 9.3.1 connaît l'API 37, mais cette plateforme n'est pas publiée
+        // par le dépôt SDK du runner. API 36 reste donc la cible vérifiable.
+        disable += "OldTargetApi"
     }
 
     testOptions {
