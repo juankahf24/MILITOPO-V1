@@ -8,6 +8,10 @@ on:
       - 'tawba-bootstrap/**'
       - '.github/workflows/tawba-phase1.yml'
 
+concurrency:
+  group: tawba-phase1-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -98,16 +102,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android platform, emulator and build tools
+      - name: Install Android platform and build tools
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager \
-            'platform-tools' \
-            'platforms;android-36' \
-            'build-tools;36.0.0' \
-            'emulator' \
-            'system-images;android-35;google_apis;x86_64'
+          sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
 
       - name: Set up Gradle 9.5
         uses: gradle/actions/setup-gradle@v4
@@ -154,61 +153,34 @@ jobs:
           grep -q 'assets/databases/tawba.db' docs/qa/apk-contents.txt
           grep -q 'assets/fonts/amiri_quran.ttf' docs/qa/apk-contents.txt
 
-      - name: Install, test and capture on emulator
-        working-directory: tawba-android
-        shell: bash
-        run: |
-          set -euo pipefail
-          avd_name='tawba_ci'
-          printf 'no\n' | avdmanager create avd \
-            --force \
-            --name "$avd_name" \
-            --package 'system-images;android-35;google_apis;x86_64' \
-            --device 'pixel_6'
-          sudo chmod 666 /dev/kvm || true
-          nohup "$ANDROID_HOME/emulator/emulator" \
-            -avd "$avd_name" \
-            -no-window \
-            -no-audio \
-            -no-boot-anim \
-            -gpu swiftshader_indirect \
-            -camera-back none \
-            -camera-front none \
-            > docs/qa/emulator-console.log 2>&1 &
-
-          adb wait-for-device
-          for _ in $(seq 1 120); do
-            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = '1' ]; then
-              break
+      - name: Instrumented test, installation, launch and capture
+        uses: ReactiveCircus/android-emulator-runner@cad321644df6d8cf1985a42767272ff068adb9cb
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: |
+            set -euo pipefail
+            cd tawba-android
+            gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest | tee docs/qa/instrumented-tests.log
+            adb shell pm clear com.tawba.app.phase1
+            adb logcat -c
+            adb shell am start -W -n com.tawba.app.phase1/com.tawba.app.MainActivity | tee docs/qa/activity-start.txt
+            sleep 8
+            adb exec-out screencap -p > docs/qa/home-emulator.png
+            adb shell uiautomator dump /sdcard/tawba-home.xml >/dev/null
+            adb pull /sdcard/tawba-home.xml docs/qa/tawba-home.xml >/dev/null
+            adb shell dumpsys package com.tawba.app.phase1 > docs/qa/dumpsys-package.txt
+            adb shell pidof com.tawba.app.phase1 | tee docs/qa/app-pid.txt
+            test -s docs/qa/app-pid.txt
+            adb logcat -d > docs/qa/logcat-emulator.txt
+            if grep -E 'FATAL EXCEPTION|Process: com\.tawba\.app\.phase1.*has died' docs/qa/logcat-emulator.txt; then
+              exit 1
             fi
-            sleep 2
-          done
-          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = '1'
-
-          adb shell settings put global window_animation_scale 0
-          adb shell settings put global transition_animation_scale 0
-          adb shell settings put global animator_duration_scale 0
-          adb shell input keyevent 82 || true
-
-          gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest \
-            | tee docs/qa/instrumented-tests.log
-
-          adb shell pm clear com.tawba.app.phase1
-          adb logcat -c
-          adb shell am start -W \
-            -n com.tawba.app.phase1/com.tawba.app.MainActivity \
-            | tee docs/qa/activity-start.txt
-          sleep 8
-
-          adb exec-out screencap -p > docs/qa/home-emulator.png
-          adb shell dumpsys package com.tawba.app.phase1 > docs/qa/dumpsys-package.txt
-          adb shell pidof com.tawba.app.phase1 | tee docs/qa/app-pid.txt
-          test -s docs/qa/app-pid.txt
-          adb logcat -d > docs/qa/logcat-emulator.txt
-          if grep -E 'FATAL EXCEPTION|Process: com\.tawba\.app\.phase1.*has died' docs/qa/logcat-emulator.txt; then
-            exit 1
-          fi
-          adb emu kill || true
 
       - name: Package complete reproducible source
         working-directory: tawba-android
