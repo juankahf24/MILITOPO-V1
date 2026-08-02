@@ -1,0 +1,42 @@
+name: Muslim QI Design APK
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'muslim-qi-design/**'
+      - '.github/workflows/muslim-qi-design-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-design-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build installable debug APK
+        working-directory: muslim-qi-design
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Muslim-QI-Design-APK
+          path: muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 1
