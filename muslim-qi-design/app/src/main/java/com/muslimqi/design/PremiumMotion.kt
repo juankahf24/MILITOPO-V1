@@ -1,7 +1,6 @@
 package com.muslimqi.design
 
 import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -19,7 +18,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.using
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -80,7 +78,7 @@ internal fun premiumScreenTransform(forward: Boolean): ContentTransform {
         targetScale = 0.985f
     )
 
-    return (enter togetherWith exit).using(SizeTransform(clip = false))
+    return enter togetherWith exit
 }
 
 internal fun Modifier.premiumReentry(key: Any): Modifier = composed {
