@@ -1,0 +1,48 @@
+name: Tawba Resolver Diagnostic
+
+on:
+  push:
+    branches: [tawba-toolchain-export-20260802]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tawba-resolver/**'
+      - '.github/workflows/tawba-resolver-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+          cache-disabled: true
+      - uses: android-actions/setup-android@v3
+      - name: Install API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Diagnose selected dependency resolution
+        working-directory: tawba-resolver
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace :app:resolveSelectedTawbaDependencies > /tmp/resolver-full.log 2>&1
+          status=$?
+          echo "gradle_exit=$status"
+          echo '--- failures ---'
+          grep -E -A8 -B4 'FAILURE:|What went wrong:|Could not resolve|Could not find|Could not determine|Execution failed|Caused by:' /tmp/resolver-full.log | tail -n 240 || true
+          echo '--- selected resolution progress ---'
+          grep -E 'Resolving |Resolved [0-9]+ selected' /tmp/resolver-full.log || true
+          echo '--- log tail ---'
+          tail -n 100 /tmp/resolver-full.log
+          exit 0
