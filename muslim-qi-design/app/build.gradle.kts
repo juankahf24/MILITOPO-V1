@@ -12,8 +12,8 @@ android {
         applicationId = "com.muslimqi.design"
         minSdk = 24
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0-functional"
+        versionCode = 6
+        versionName = "0.6.0-premium-motion"
     }
 
     buildFeatures {
