@@ -25,10 +25,20 @@ jobs:
         run: |
           set -euo pipefail
           cat tawba-bootstrap/source.zip.b64.part* | base64 --decode > /tmp/tawba-source.zip
-          unzip -t /tmp/tawba-source.zip
-          mkdir -p tawba-android
-          unzip -q /tmp/tawba-source.zip -d tawba-android
-          test -f tawba-android/settings.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          archive = Path('/tmp/tawba-source.zip')
+          target = Path('tawba-android')
+          with zipfile.ZipFile(archive) as zf:
+              bad = zf.testzip()
+              if bad is not None:
+                  raise SystemExit(f'CRC invalide: {bad}')
+              zf.extractall(target)
+          if not (target / 'settings.gradle.kts').is_file():
+              raise SystemExit('Projet Gradle absent après extraction')
+          print(f'Archive validée: {len(zf.infolist())} entrées')
+          PY
 
       - name: Pin and generate Quran database
         working-directory: tawba-android
