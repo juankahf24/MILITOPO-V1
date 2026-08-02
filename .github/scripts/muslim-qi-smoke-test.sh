@@ -3,7 +3,7 @@ set -euo pipefail
 
 APK="muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk"
 PACKAGE="com.muslimqi.design.demo"
-ACTIVITY="com.muslimqi.design.UltraPremiumMainActivity"
+ACTIVITY="com.muslimqi.design.FunctionalMainActivity"
 
 adb install -r "$APK"
 adb shell am force-stop "$PACKAGE"
@@ -11,34 +11,39 @@ adb logcat -c
 adb shell am start -W -n "$PACKAGE/$ACTIVITY"
 sleep 5
 
-# Some hosted Pixel images display a launcher ANR over the foreground app.
-# This tap closes only that system dialog when it appears; otherwise it is harmless.
-adb shell input tap 410 1590
+# Close a possible hosted-emulator launcher dialog without affecting the app.
+adb shell input tap 410 1590 || true
 sleep 1
 
 adb exec-out screencap -p > muslim-qi-language-screen.png
 adb logcat -d -v threadtime > muslim-qi-logcat.txt
-
 APP_PID="$(adb shell pidof "$PACKAGE" | tr -d '\r')"
-echo "Muslim QI process: $APP_PID"
-if [[ -z "$APP_PID" ]]; then
-  echo "Application process stopped. Relevant crash log:"
+test -n "$APP_PID"
+adb shell dumpsys activity activities | grep "$PACKAGE/$ACTIVITY"
+test -s muslim-qi-language-screen.png
+
+# Open the real 4 x 7 responsive game directly for a deterministic UI smoke test.
+adb shell am force-stop "$PACKAGE"
+adb shell am start -W -n "$PACKAGE/$ACTIVITY" --es test_page memory_4x7
+sleep 4
+adb shell uiautomator dump /sdcard/muslim-qi-ui.xml >/dev/null
+adb shell cat /sdcard/muslim-qi-ui.xml > muslim-qi-ui.xml
+grep -q "4 × 7" muslim-qi-ui.xml
+grep -q "Paires" muslim-qi-ui.xml
+
+# Exercise two real card taps and verify the process remains alive.
+adb shell input tap 135 520
+adb shell input tap 405 520
+sleep 2
+SECOND_PID="$(adb shell pidof "$PACKAGE" | tr -d '\r')"
+test -n "$SECOND_PID"
+adb exec-out screencap -p > muslim-qi-after-interaction.png
+test -s muslim-qi-after-interaction.png
+
+adb logcat -d -v threadtime > muslim-qi-logcat.txt
+if grep -q "FATAL EXCEPTION.*com.muslimqi.design.demo" muslim-qi-logcat.txt; then
   grep -A 100 -B 20 -E 'FATAL EXCEPTION|AndroidRuntime|Process: com.muslimqi.design.demo' muslim-qi-logcat.txt || true
   exit 1
 fi
 
-adb shell dumpsys activity activities | grep "$PACKAGE/$ACTIVITY"
-test -s muslim-qi-language-screen.png
-
-# Pixel 6 profile: tap the bottom action button on the language screen.
-adb shell input tap 540 2190
-sleep 2
-SECOND_PID="$(adb shell pidof "$PACKAGE" | tr -d '\r')"
-test -n "$SECOND_PID"
-adb shell uiautomator dump /sdcard/muslim-qi-ui.xml >/dev/null
-adb shell cat /sdcard/muslim-qi-ui.xml > muslim-qi-ui.xml
-grep -q "Apprenez avec confiance" muslim-qi-ui.xml
-adb exec-out screencap -p > muslim-qi-after-interaction.png
-test -s muslim-qi-after-interaction.png
-
-echo "Ultra premium Muslim QI v0.4 launch and onboarding interaction smoke test passed."
+echo "Muslim QI v0.5 launch, 4x7 layout and card interaction smoke test passed."
