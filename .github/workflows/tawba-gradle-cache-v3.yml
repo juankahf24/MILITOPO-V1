@@ -27,22 +27,27 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
       - name: Resolve dependencies
+        id: resolve
+        continue-on-error: true
         working-directory: tawba-resolver
         run: |
           set -o pipefail
           gradle --no-daemon --stacktrace :app:resolveSelectedTawbaDependencies | tee /tmp/tawba-resolver.log
-          grep -q 'Resolved 8 selected configurations' /tmp/tawba-resolver.log
       - name: Create archive
+        if: always()
         run: |
           set -euo pipefail
           mkdir -p /tmp/tawba-gradle-cache
           cp -a "$HOME/.gradle/caches" /tmp/tawba-gradle-cache/
           cp -a "$HOME/.gradle/native" /tmp/tawba-gradle-cache/ 2>/dev/null || true
-          cp /tmp/tawba-resolver.log /tmp/tawba-gradle-cache/
+          cp /tmp/tawba-resolver.log /tmp/tawba-gradle-cache/ 2>/dev/null || true
+          echo "resolution_outcome=${{ steps.resolve.outcome }}" > /tmp/tawba-gradle-cache/resolution-status.txt
           du -sh /tmp/tawba-gradle-cache | tee /tmp/tawba-gradle-cache/size.txt
           tar -C /tmp -cf /tmp/tawba-gradle-cache.tar tawba-gradle-cache
           sha256sum /tmp/tawba-gradle-cache.tar > /tmp/tawba-gradle-cache.sha256
-      - uses: actions/upload-artifact@v4
+      - name: Upload cache
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: Tawba-Gradle-Cache-V3
           path: |
