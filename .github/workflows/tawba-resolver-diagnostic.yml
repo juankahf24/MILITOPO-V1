@@ -38,11 +38,22 @@ jobs:
           set +e
           gradle --no-daemon --stacktrace :app:resolveSelectedTawbaDependencies > /tmp/resolver-full.log 2>&1
           status=$?
-          echo "gradle_exit=$status"
-          echo '--- failures ---'
-          grep -E -A8 -B4 'FAILURE:|What went wrong:|Could not resolve|Could not find|Could not determine|Execution failed|Caused by:' /tmp/resolver-full.log | tail -n 240 || true
-          echo '--- selected resolution progress ---'
-          grep -E 'Resolving |Resolved [0-9]+ selected' /tmp/resolver-full.log || true
-          echo '--- log tail ---'
-          tail -n 100 /tmp/resolver-full.log
+          echo "gradle_exit=$status" > /tmp/resolver-status.txt
+          grep -E -A8 -B4 'FAILURE:|What went wrong:|Could not resolve|Could not find|Could not determine|Execution failed|Caused by:' /tmp/resolver-full.log | tail -n 300 > /tmp/resolver-errors.txt || true
+          grep -E 'Resolving |Resolved [0-9]+ selected' /tmp/resolver-full.log > /tmp/resolver-progress.txt || true
+          cat /tmp/resolver-status.txt
+          cat /tmp/resolver-errors.txt
+          cat /tmp/resolver-progress.txt
           exit 0
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tawba-Resolver-Diagnostic
+          path: |
+            /tmp/resolver-full.log
+            /tmp/resolver-status.txt
+            /tmp/resolver-errors.txt
+            /tmp/resolver-progress.txt
+          if-no-files-found: error
+          retention-days: 3
