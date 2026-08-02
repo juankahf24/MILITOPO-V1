@@ -34,11 +34,15 @@ jobs:
               bad = zf.testzip()
               if bad is not None:
                   raise SystemExit(f'CRC invalide: {bad}')
+              entries = len(zf.infolist())
               zf.extractall(target)
           if not (target / 'settings.gradle.kts').is_file():
               raise SystemExit('Projet Gradle absent après extraction')
-          print(f'Archive validée: {len(zf.infolist())} entrées')
+          print(f'Archive validée: {entries} entrées')
           PY
+          if [ -d tawba-bootstrap/overlay ]; then
+            cp -a tawba-bootstrap/overlay/. tawba-android/
+          fi
 
       - name: Pin and generate Quran database
         working-directory: tawba-android
@@ -97,7 +101,7 @@ jobs:
       - name: Install Android platform and build tools
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null
+          set -euo pipefail
           sdkmanager 'platform-tools' 'platforms;android-37' 'build-tools;36.0.0'
 
       - name: Set up Gradle 9.5
@@ -138,13 +142,15 @@ jobs:
         working-directory: tawba-android
         shell: bash
         run: |
-          rm -rf app/build .gradle
-          zip -qr ../Tawba-4.0.0-Phase1-Source.zip .
+          set -euo pipefail
+          zip -qr ../Tawba-4.0.0-Phase1-Source.zip . \
+            -x 'app/build/*' '.gradle/*'
           sha256sum ../Tawba-4.0.0-Phase1-Source.zip | tee docs/qa/source-sha256.txt
 
       - name: Prepare delivery
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p delivery/qa
           cp tawba-android/app/build/outputs/apk/debug/app-debug.apk delivery/Tawba-4.0.0-Phase1-debug.apk
           cp Tawba-4.0.0-Phase1-Source.zip delivery/
