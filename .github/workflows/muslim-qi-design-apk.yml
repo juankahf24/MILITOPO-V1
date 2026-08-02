@@ -45,7 +45,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install and launch on Android emulator
+      - name: Install, launch and capture diagnostics
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -54,22 +54,39 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
+            set +e
             adb install -r muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
             adb shell am force-stop com.muslimqi.design.demo
+            adb logcat -c
             adb shell am start -W -n com.muslimqi.design.demo/com.muslimqi.design.MainActivity
-            sleep 5
-            APP_PID="$(adb shell pidof com.muslimqi.design.demo | tr -d '\r')"
-            test -n "$APP_PID"
-            adb shell dumpsys activity activities | grep -q 'com.muslimqi.design.demo/com.muslimqi.design.MainActivity'
+            sleep 7
             adb exec-out screencap -p > muslim-qi-launch.png
+            adb logcat -d -v threadtime > muslim-qi-logcat.txt
+            APP_PID="$(adb shell pidof com.muslimqi.design.demo | tr -d '\r')"
+            echo "APP_PID=$APP_PID"
+            if [ -z "$APP_PID" ]; then
+              echo 'Application process stopped. Relevant crash log:'
+              grep -A 80 -B 15 -E 'FATAL EXCEPTION|AndroidRuntime|Process: com.muslimqi.design.demo' muslim-qi-logcat.txt || true
+              exit 1
+            fi
+            adb shell dumpsys activity activities | grep 'com.muslimqi.design.demo/com.muslimqi.design.MainActivity'
             test -s muslim-qi-launch.png
 
-      - name: Upload verified APK and launch screenshot
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Muslim-QI-Diagnostics
+          path: |
+            muslim-qi-launch.png
+            muslim-qi-logcat.txt
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
           name: Muslim-QI-Modern-Design-APK
-          path: |
-            muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
-            muslim-qi-launch.png
+          path: muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 1
