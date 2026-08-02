@@ -47,13 +47,17 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Align AndroidX versions with API 36 and AGP 8.13
+      - name: Align dependencies and warning-free APIs
         shell: bash
         run: |
           set -euo pipefail
           sed -i 's/androidx-core = "1.19.0"/androidx-core = "1.17.0"/' Tawba/gradle/libs.versions.toml
           sed -i 's/androidx-lifecycle = "2.11.0"/androidx-lifecycle = "2.10.0"/' Tawba/gradle/libs.versions.toml
+          QURAN_SCREEN=Tawba/feature/quran/src/main/kotlin/com/tawba/feature/quran/QuranFeatureScreen.kt
+          sed -i 's/import androidx.compose.material.icons.outlined.MenuBook/import androidx.compose.material.icons.automirrored.outlined.MenuBook/' "$QURAN_SCREEN"
+          sed -i 's/Icons.Outlined.MenuBook/Icons.AutoMirrored.Outlined.MenuBook/' "$QURAN_SCREEN"
           grep -E 'androidx-core|androidx-lifecycle' Tawba/gradle/libs.versions.toml
+          grep -n 'MenuBook' "$QURAN_SCREEN"
 
       - name: Supply QA Arabic fonts
         shell: bash
