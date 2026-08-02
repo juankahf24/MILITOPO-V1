@@ -3,7 +3,7 @@ set -euo pipefail
 
 APK="muslim-qi-design/app/build/outputs/apk/debug/app-debug.apk"
 PACKAGE="com.muslimqi.design.demo"
-ACTIVITY="com.muslimqi.design.PremiumMainActivity"
+ACTIVITY="com.muslimqi.design.UltraPremiumMainActivity"
 
 adb install -r "$APK"
 adb shell am force-stop "$PACKAGE"
@@ -37,8 +37,8 @@ SECOND_PID="$(adb shell pidof "$PACKAGE" | tr -d '\r')"
 test -n "$SECOND_PID"
 adb shell uiautomator dump /sdcard/muslim-qi-ui.xml >/dev/null
 adb shell cat /sdcard/muslim-qi-ui.xml > muslim-qi-ui.xml
-grep -q "Comprendre avec des explications simples" muslim-qi-ui.xml
+grep -q "Apprenez avec confiance" muslim-qi-ui.xml
 adb exec-out screencap -p > muslim-qi-after-interaction.png
 test -s muslim-qi-after-interaction.png
 
-echo "Premium Muslim QI launch and onboarding interaction smoke test passed."
+echo "Ultra premium Muslim QI v0.4 launch and onboarding interaction smoke test passed."
