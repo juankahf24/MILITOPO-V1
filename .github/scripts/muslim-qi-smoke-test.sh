@@ -22,6 +22,19 @@ test -n "$APP_PID"
 adb shell dumpsys activity activities | grep "$PACKAGE/$ACTIVITY"
 test -s muslim-qi-language-screen.png
 
+# Exercise the direction-aware page transition from language to onboarding.
+adb shell dumpsys gfxinfo "$PACKAGE" reset >/dev/null || true
+adb shell input tap 540 2190
+sleep 0.18
+adb exec-out screencap -p > muslim-qi-transition-frame.png
+sleep 1.4
+adb shell uiautomator dump /sdcard/muslim-qi-onboarding.xml >/dev/null
+adb shell cat /sdcard/muslim-qi-onboarding.xml > muslim-qi-onboarding.xml
+grep -q "Apprenez avec confiance" muslim-qi-onboarding.xml
+test -s muslim-qi-transition-frame.png
+adb shell dumpsys gfxinfo "$PACKAGE" > muslim-qi-gfxinfo.txt
+test -s muslim-qi-gfxinfo.txt
+
 # Open the real 4 x 7 responsive game directly for a deterministic UI smoke test.
 adb shell am force-stop "$PACKAGE"
 adb shell am start -W -n "$PACKAGE/$ACTIVITY" --es test_page memory_4x7
@@ -53,4 +66,4 @@ if grep -q "FATAL EXCEPTION.*com.muslimqi.design.demo" muslim-qi-logcat.txt; the
   exit 1
 fi
 
-echo "Muslim QI v0.5 launch, 4x7 layout and card interaction smoke test passed."
+echo "Muslim QI v0.6 premium motion, transition, 4x7 layout and card interaction test passed."
