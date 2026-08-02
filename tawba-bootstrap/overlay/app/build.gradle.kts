@@ -5,22 +5,26 @@ plugins {
 
 android {
     namespace = "com.tawba.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.tawba.app"
         minSdk = 24
-        targetSdk = 36
-        versionCode = 400
-        versionName = "4.0.0-phase1"
+        targetSdk = 37
+        versionCode = 410
+        versionName = "4.0.0-phase1-clean"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
 
+    signingConfigs {
+        getByName("debug")
+    }
+
     buildTypes {
         debug {
-            applicationIdSuffix = ".phase1"
+            applicationIdSuffix = ".phase1.debug"
             versionNameSuffix = "-debug"
             isDebuggable = true
         }
@@ -29,8 +33,15 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
+        }
+        create("qa") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".phase1"
+            versionNameSuffix = "-qa"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
 
@@ -48,15 +59,22 @@ android {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/LICENSE*",
-            "/META-INF/NOTICE*"
+            "/META-INF/NOTICE*",
         )
     }
 
     lint {
         abortOnError = true
         checkReleaseBuilds = true
-        warningsAsErrors = false
-        baseline = file("lint-baseline.xml")
+        warningsAsErrors = true
+        sarifReport = true
+        htmlReport = true
+        textReport = true
+    }
+
+    testOptions {
+        animationsDisabled = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -65,16 +83,15 @@ composeCompiler {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2025.12.00"))
-    androidTestImplementation(platform("androidx.compose:compose-bom:2025.12.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
 
-    // Stable Jetpack versions compatible with the stable Android 16 SDK (API 36).
-    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
-    implementation("androidx.activity:activity-compose:1.12.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
 
