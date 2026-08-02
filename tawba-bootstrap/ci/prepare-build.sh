@@ -25,12 +25,16 @@ if not (target / 'settings.gradle.kts').is_file():
 print(f'Archive source validée: {entries} entrées')
 PY
 
-cp -a tawba-bootstrap/overlay/. "$PROJECT/"
 cat tawba-bootstrap/clean-overlay.b64.part* | base64 --decode > /tmp/tawba-clean-overlay.tar.gz
 echo 'e6863d0c92ab0737258cf3085baae019f3b80ad7b03f31f07396c4f33f9c2f83  /tmp/tawba-clean-overlay.tar.gz' | sha256sum --check
 tar -xzf /tmp/tawba-clean-overlay.tar.gz -C "$PROJECT"
+# Les fichiers texte de l'overlay versionné sont appliqués en dernier : ils
+# définissent la configuration API réellement reproductible et la documentation.
+cp -a tawba-bootstrap/overlay/. "$PROJECT/"
 rm -f "$PROJECT/app/lint-baseline.xml"
 test -f "$PROJECT/app/src/main/assets/licenses/QURAN-CORPUS-NOTICE.txt"
+grep -q 'compileSdk = 36' "$PROJECT/app/build.gradle.kts"
+grep -q 'targetSdk = 36' "$PROJECT/app/build.gradle.kts"
 
 mkdir -p "$PROJECT/app/src/main/assets/databases" "$QA"
 curl --fail --location --retry 4 \
@@ -64,7 +68,7 @@ curl --fail --location --retry 4 "$FONT_BASE/ofl/notonaskharabic/OFL.txt" --outp
 curl --fail --location --retry 4 "$FONT_BASE/ofl/notosansarabic/OFL.txt" --output "$PROJECT/app/src/main/assets/licenses/NOTO-SANS-ARABIC-OFL.txt"
 sha256sum "$PROJECT"/app/src/main/assets/fonts/* | tee "$QA/font-sha256.txt"
 
-sdkmanager 'platform-tools' 'platforms;android-37' 'build-tools;36.0.0'
+sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
 
 cd "$PROJECT"
 set -o pipefail
@@ -93,7 +97,7 @@ unzip -l "$APK" | tee "$QA/apk-contents.txt"
 stat --printf='%n %s bytes\n' "$APK" "$DEBUG_APK" | tee "$QA/apk-sizes.txt"
 grep -q "package: name='com.tawba.app.phase1'" "$QA/apk-badging.txt"
 grep -q "versionCode='410'" "$QA/apk-badging.txt"
-grep -q "targetSdkVersion:'37'" "$QA/apk-badging.txt"
+grep -q "targetSdkVersion:'36'" "$QA/apk-badging.txt"
 grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$QA/apk-signature.txt"
 grep -q 'assets/databases/tawba.db' "$QA/apk-contents.txt"
 grep -q 'assets/fonts/amiri_quran.ttf' "$QA/apk-contents.txt"
