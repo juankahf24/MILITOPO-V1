@@ -6,6 +6,7 @@ on:
       - muslim-qi-design-apk
     paths:
       - "muslim-qi-design/scripts/apply_premium_motion.py"
+      - "muslim-qi-design/scripts/apply_premium_motion_phase2.py"
       - "muslim-qi-design/app/src/main/java/com/muslimqi/design/PremiumMotion.kt"
       - ".github/workflows/apply-premium-motion.yml"
 
@@ -27,8 +28,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Apply deterministic motion patch
+      - name: Apply core premium motion patch
         run: python muslim-qi-design/scripts/apply_premium_motion.py
+
+      - name: Apply premium interaction and celebration patch
+        run: python muslim-qi-design/scripts/apply_premium_motion_phase2.py
 
       - name: Validate generated diff
         run: |
@@ -44,5 +48,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add muslim-qi-design/app/src/main/java/com/muslimqi/design/FunctionalMainActivity.kt
-          git commit -m "feat(muslim-qi): integrate premium animations across the app"
+          git commit -m "feat(muslim-qi): integrate complete premium motion system"
           git push origin HEAD:muslim-qi-design-apk
