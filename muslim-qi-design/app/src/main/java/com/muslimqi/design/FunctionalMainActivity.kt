@@ -31,6 +31,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -344,7 +346,9 @@ private fun MuslimQiFunctionalApp(testPage: String?) {
                     targetState = page,
                     modifier = Modifier.fillMaxSize(),
                     transitionSpec = {
-                        fadeIn(tween(220)) togetherWith fadeOut(tween(150))
+                        premiumScreenTransform(
+                            forward = targetState.ordinal >= initialState.ordinal
+                        )
                     },
                     label = "app_page"
                 ) { targetPage ->
@@ -467,6 +471,7 @@ private fun AppBackdrop(content: @Composable BoxScope.() -> Unit) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        PremiumAmbientBackdrop(Modifier.matchParentSize())
         Canvas(Modifier.matchParentSize()) {
             drawCircle(
                 color = patternColor,
@@ -564,7 +569,7 @@ private fun SplashScreen(onFinished: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            BrandLogo(120.dp)
+            PremiumBreathingLogo { BrandLogo(120.dp) }
             Text(
                 text = "Muslim QI",
                 color = Color.White,
@@ -730,9 +735,21 @@ private fun LanguageCard(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val selectionScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.975f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+        ),
+        label = "language_selection_scale"
+    )
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = selectionScale
+                scaleY = selectionScale
+            }
             .clickable(onClick = onClick)
             .border(
                 1.5.dp,
@@ -1056,21 +1073,38 @@ private fun PrimaryActionButton(
     icon: ImageVector,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val buttonScale by animateFloatAsState(
+        targetValue = if (pressed) 0.965f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
+        ),
+        label = "primary_button_scale"
+    )
     Button(
         onClick = onClick,
+        interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()
             .height(58.dp)
-            .shadow(10.dp, RoundedCornerShape(19.dp)),
+            .graphicsLayer {
+                scaleX = buttonScale
+                scaleY = buttonScale
+            }
+            .shadow(
+                if (pressed) 4.dp else 12.dp,
+                RoundedCornerShape(19.dp)
+            ),
         shape = RoundedCornerShape(19.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary
         )
     ) {
         Text(text, fontWeight = FontWeight.ExtraBold)
-        Icon(
-            icon,
-            contentDescription = null,
+        PremiumActionIcon(
+            icon = icon,
             modifier = Modifier
                 .padding(start = 8.dp)
                 .size(20.dp)
@@ -1161,6 +1195,22 @@ private fun BottomNavigationBar(
         ) {
             bottomNavigation.forEach { item ->
                 val active = item.page == selected
+                val navigationScale by animateFloatAsState(
+                    targetValue = if (active) 1.12f else 0.94f,
+                    animationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                    ),
+                    label = "navigation_scale"
+                )
+                val navigationLift by animateFloatAsState(
+                    targetValue = if (active) -5f else 0f,
+                    animationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                    ),
+                    label = "navigation_lift"
+                )
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -1175,6 +1225,11 @@ private fun BottomNavigationBar(
                         Modifier
                             .width(if (active) 48.dp else 36.dp)
                             .height(29.dp)
+                            .graphicsLayer {
+                                scaleX = navigationScale
+                                scaleY = navigationScale
+                                translationY = navigationLift
+                            }
                             .clip(RoundedCornerShape(15.dp))
                             .background(
                                 if (active) MaterialTheme.colorScheme.primaryContainer
@@ -1475,7 +1530,11 @@ private fun DailyLearningCard(onClick: () -> Unit) {
                         )
                     }
                     Spacer(Modifier.weight(1f))
-                    Icon(Icons.Rounded.AutoAwesome, null, tint = MqGold)
+                    PremiumFloatingIcon(
+                        icon = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = MqGold
+                    )
                 }
                 Text(
                     "Les valeurs\net leurs enseignements",
@@ -2157,8 +2216,20 @@ private fun FormatSelectionCard(
     modifier: Modifier,
     onClick: () -> Unit
 ) {
+    val selectionScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.965f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+        ),
+        label = "format_selection_scale"
+    )
     Surface(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = selectionScale
+                scaleY = selectionScale
+            }
             .clickable(onClick = onClick)
             .border(
                 1.5.dp,
@@ -2520,11 +2591,21 @@ private fun MemoryCard(
         label = "memory_card_flip"
     )
     val showFront = rotation > 90f
+    val matchScale by animateFloatAsState(
+        targetValue = if (matched) 1.045f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+        ),
+        label = "matched_card_scale"
+    )
     Surface(
         modifier = modifier
             .graphicsLayer {
                 rotationY = rotation
                 cameraDistance = 12f * density
+                scaleX = matchScale
+                scaleY = matchScale
             }
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(if (compact) 11.dp else 15.dp),
