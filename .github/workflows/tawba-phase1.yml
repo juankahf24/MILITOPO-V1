@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout isolated branch
@@ -98,11 +98,16 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android platform and build tools
+      - name: Install Android platform, emulator and build tools
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
+          sdkmanager \
+            'platform-tools' \
+            'platforms;android-36' \
+            'build-tools;36.0.0' \
+            'emulator' \
+            'system-images;android-35;google_apis;x86_64'
 
       - name: Set up Gradle 9.5
         uses: gradle/actions/setup-gradle@v4
@@ -119,6 +124,17 @@ jobs:
             :app:lintDebug \
             :app:assembleDebug \
             | tee docs/qa/gradle-build.log
+
+      - name: Preserve lint reports
+        working-directory: tawba-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp app/build/reports/lint-results-debug.html docs/qa/
+          cp app/build/reports/lint-results-debug.sarif docs/qa/
+          if [ -f app/build/reports/lint-results-debug.txt ]; then
+            cp app/build/reports/lint-results-debug.txt docs/qa/
+          fi
 
       - name: Inspect and verify APK
         working-directory: tawba-android
@@ -137,6 +153,62 @@ jobs:
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' docs/qa/apk-signature.txt
           grep -q 'assets/databases/tawba.db' docs/qa/apk-contents.txt
           grep -q 'assets/fonts/amiri_quran.ttf' docs/qa/apk-contents.txt
+
+      - name: Install, test and capture on emulator
+        working-directory: tawba-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          avd_name='tawba_ci'
+          printf 'no\n' | avdmanager create avd \
+            --force \
+            --name "$avd_name" \
+            --package 'system-images;android-35;google_apis;x86_64' \
+            --device 'pixel_6'
+          sudo chmod 666 /dev/kvm || true
+          nohup "$ANDROID_HOME/emulator/emulator" \
+            -avd "$avd_name" \
+            -no-window \
+            -no-audio \
+            -no-boot-anim \
+            -gpu swiftshader_indirect \
+            -camera-back none \
+            -camera-front none \
+            > docs/qa/emulator-console.log 2>&1 &
+
+          adb wait-for-device
+          for _ in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = '1' ]; then
+              break
+            fi
+            sleep 2
+          done
+          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = '1'
+
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell input keyevent 82 || true
+
+          gradle --no-daemon --stacktrace :app:connectedDebugAndroidTest \
+            | tee docs/qa/instrumented-tests.log
+
+          adb shell pm clear com.tawba.app.phase1
+          adb logcat -c
+          adb shell am start -W \
+            -n com.tawba.app.phase1/com.tawba.app.MainActivity \
+            | tee docs/qa/activity-start.txt
+          sleep 8
+
+          adb exec-out screencap -p > docs/qa/home-emulator.png
+          adb shell dumpsys package com.tawba.app.phase1 > docs/qa/dumpsys-package.txt
+          adb shell pidof com.tawba.app.phase1 | tee docs/qa/app-pid.txt
+          test -s docs/qa/app-pid.txt
+          adb logcat -d > docs/qa/logcat-emulator.txt
+          if grep -E 'FATAL EXCEPTION|Process: com\.tawba\.app\.phase1.*has died' docs/qa/logcat-emulator.txt; then
+            exit 1
+          fi
+          adb emu kill || true
 
       - name: Package complete reproducible source
         working-directory: tawba-android
