@@ -5,6 +5,17 @@ ROOT="$(pwd)"
 PROJECT="$ROOT/tawba-android"
 QA="$PROJECT/docs/qa"
 
+preserve_diagnostics() {
+  mkdir -p "$QA"
+  if [ -d "$PROJECT/app/build/reports" ]; then
+    cp -R "$PROJECT/app/build/reports/." "$QA/build-reports/" 2>/dev/null || true
+  fi
+  find "$PROJECT/app/build/intermediates" -type f \
+    \( -name 'lint-results-*.txt' -o -name 'lint-results-*.sarif' -o -name 'lint-results-*.html' \) \
+    -exec cp -f {} "$QA/" \; 2>/dev/null || true
+}
+trap preserve_diagnostics EXIT
+
 rm -rf "$PROJECT" "$ROOT/delivery"
 mkdir -p "$PROJECT" "$QA"
 
