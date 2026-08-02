@@ -19,6 +19,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -135,12 +136,12 @@ internal fun PremiumAmbientBackdrop(modifier: Modifier = Modifier) {
             )
         )
 
-        val center = Offset(size.width * 0.5f, size.height * 0.48f)
+        val centerPoint = Offset(size.width * 0.5f, size.height * 0.48f)
         val radius = size.minDimension * 0.41f
         repeat(8) { index ->
             val angle = Math.toRadians((starRotation + index * 45f).toDouble())
-            val x = center.x + kotlin.math.cos(angle).toFloat() * radius
-            val y = center.y + kotlin.math.sin(angle).toFloat() * radius
+            val x = centerPoint.x + kotlin.math.cos(angle).toFloat() * radius
+            val y = centerPoint.y + kotlin.math.sin(angle).toFloat() * radius
             drawCircle(
                 color = gold.copy(alpha = 0.075f),
                 radius = if (index % 2 == 0) 3.2f else 2.2f,
