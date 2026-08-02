@@ -25,7 +25,15 @@ jobs:
         run: |
           set -euo pipefail
           cat tawba-bootstrap/source.zip.b64.part* | base64 --decode > /tmp/tawba-phase1-source.zip
-          unzip -t /tmp/tawba-phase1-source.zip
+          python3 - <<'PY'
+          import zipfile
+          archive = '/tmp/tawba-phase1-source.zip'
+          with zipfile.ZipFile(archive) as zf:
+              bad = zf.testzip()
+              if bad is not None:
+                  raise SystemExit(f'CRC invalide: {bad}')
+              print(f'Archive CRC valide: {len(zf.infolist())} entrées')
+          PY
           sha256sum /tmp/tawba-phase1-source.zip > /tmp/tawba-phase1-source-sha256.txt
 
       - name: Upload reconstructed source
