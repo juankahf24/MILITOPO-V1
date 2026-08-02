@@ -6,6 +6,7 @@ PACKAGE="com.muslimqi.design.demo"
 ACTIVITY="com.muslimqi.design.FunctionalMainActivity"
 
 adb install -r "$APK"
+adb shell dumpsys package "$PACKAGE" | grep -q "versionName=0.6.0-premium-motion-demo"
 adb shell am force-stop "$PACKAGE"
 adb logcat -c
 adb shell am start -W -n "$PACKAGE/$ACTIVITY"
@@ -66,4 +67,4 @@ if grep -q "FATAL EXCEPTION.*com.muslimqi.design.demo" muslim-qi-logcat.txt; the
   exit 1
 fi
 
-echo "Muslim QI v0.6 premium motion, transition, 4x7 layout and card interaction test passed."
+echo "Muslim QI v0.6 premium motion, transition, responsive 4x7 layout and card interaction test passed."
