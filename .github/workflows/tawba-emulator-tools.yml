@@ -24,23 +24,52 @@ jobs:
             "platform-tools" \
             "emulator" \
             "system-images;android-35;default;x86_64"
-      - name: Package runtime
+      - name: Package and split runtime
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p out/sdk/system-images/android-35/default
-          cp -a "$ANDROID_SDK_ROOT/emulator" out/sdk/
-          cp -a "$ANDROID_SDK_ROOT/platform-tools" out/sdk/
-          cp -a "$ANDROID_SDK_ROOT/system-images/android-35/default/x86_64" out/sdk/system-images/android-35/default/
-          tar --zstd -cf out/android-emulator-api35.tar.zst -C out sdk
-          rm -rf out/sdk
-          sha256sum out/android-emulator-api35.tar.zst > out/SHA256SUMS.txt
+          mkdir -p work/sdk/system-images/android-35/default out
+          cp -a "$ANDROID_SDK_ROOT/emulator" work/sdk/
+          cp -a "$ANDROID_SDK_ROOT/platform-tools" work/sdk/
+          cp -a "$ANDROID_SDK_ROOT/system-images/android-35/default/x86_64" work/sdk/system-images/android-35/default/
+          tar --zstd -cf work/android-emulator-api35.tar.zst -C work sdk
+          split -b 300M -d -a 2 work/android-emulator-api35.tar.zst out/part-
+          sha256sum work/android-emulator-api35.tar.zst > out/FULL-SHA256SUM.txt
+          sha256sum out/part-* > out/PARTS-SHA256SUMS.txt
           ls -lh out/
-      - name: Upload emulator runtime
+      - name: Upload part 00
         uses: actions/upload-artifact@v4
         with:
-          name: tawba-emulator-api35
-          path: out/
-          if-no-files-found: error
+          name: tawba-emulator-part-00
+          path: out/part-00
           compression-level: 0
+          retention-days: 1
+      - name: Upload part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: tawba-emulator-part-01
+          path: out/part-01
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: tawba-emulator-part-02
+          path: out/part-02
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: tawba-emulator-part-03
+          path: out/part-03
+          compression-level: 0
+          retention-days: 1
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: tawba-emulator-checksums
+          path: |
+            out/FULL-SHA256SUM.txt
+            out/PARTS-SHA256SUMS.txt
           retention-days: 1
