@@ -1,0 +1,173 @@
+name: Temporary MemoQuest Toolchain Bootstrap
+
+on:
+  push:
+    branches:
+      - tmp-memoquest-toolchain
+
+jobs:
+  prepare-toolchain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify preinstalled Android SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          java -version
+          sdkmanager --version
+
+      - name: Install Android API 36 and Build Tools 35
+        shell: bash
+        run: |
+          set -euxo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+
+      - name: Download and verify Gradle 8.13
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fL --retry 5 --retry-delay 2 https://services.gradle.org/distributions/gradle-8.13-bin.zip -o gradle-8.13-bin.zip
+          echo "20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78  gradle-8.13-bin.zip" | sha256sum -c -
+          unzip -q gradle-8.13-bin.zip
+          "$RUNNER_TEMP/gradle-8.13/bin/gradle" --version
+
+      - name: Prefetch exact AGP and dependency cache
+        shell: bash
+        run: |
+          set -euxo pipefail
+          D="$RUNNER_TEMP/mq-prefetch"
+          mkdir -p "$D/app/src/main/java/com/example/prefetch" "$D/app/src/test/java/com/example/prefetch"
+          cat > "$D/settings.gradle" <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = 'MemoQuestPrefetch'
+          include ':app'
+          EOF
+          cat > "$D/build.gradle" <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.13.2' apply false
+          }
+          EOF
+          cat > "$D/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=false
+          android.nonTransitiveRClass=true
+          android.nonFinalResIds=true
+          EOF
+          cat > "$D/app/build.gradle" <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.example.prefetch'
+              compileSdk 36
+              buildFeatures { buildConfig = true }
+              defaultConfig {
+                  applicationId 'com.example.prefetch'
+                  minSdk 26
+                  targetSdk 36
+                  versionCode 1
+                  versionName '1.0'
+              }
+              buildTypes {
+                  release {
+                      debuggable false
+                      minifyEnabled false
+                      shrinkResources false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              lint {
+                  abortOnError true
+                  checkReleaseBuilds true
+                  warningsAsErrors false
+              }
+          }
+          dependencies { testImplementation 'junit:junit:4.13.2' }
+          EOF
+          : > "$D/app/proguard-rules.pro"
+          cat > "$D/app/src/main/AndroidManifest.xml" <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <application android:theme="@android:style/Theme.Material.Light.NoActionBar">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN" />
+                  <category android:name="android.intent.category.LAUNCHER" />
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > "$D/app/src/main/java/com/example/prefetch/MainActivity.java" <<'EOF'
+          package com.example.prefetch;
+          public final class MainActivity extends android.app.Activity {}
+          EOF
+          cat > "$D/app/src/test/java/com/example/prefetch/SmokeTest.java" <<'EOF'
+          package com.example.prefetch;
+          import org.junit.Test;
+          import static org.junit.Assert.assertTrue;
+          public final class SmokeTest { @Test public void ok() { assertTrue(true); } }
+          EOF
+          cd "$D"
+          "$RUNNER_TEMP/gradle-8.13/bin/gradle" --no-daemon --refresh-dependencies clean lintRelease testReleaseUnitTest bundleRelease
+
+      - name: Download bundletool 1.18.3
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 5 --retry-delay 2 https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar -o "$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+          java -jar "$RUNNER_TEMP/bundletool-all-1.18.3.jar" version
+
+      - name: Package offline toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          STAGE="$RUNNER_TEMP/mq-toolchain"
+          mkdir -p "$STAGE/gradle" "$STAGE/sdk/platforms" "$STAGE/sdk/build-tools" "$STAGE/sdk/platform-tools" "$STAGE/sdk/licenses" "$STAGE/gradle-user-home"
+          cp -a "$RUNNER_TEMP/gradle-8.13" "$STAGE/gradle/"
+          cp -a "$ANDROID_HOME/platforms/android-36" "$STAGE/sdk/platforms/"
+          cp -a "$ANDROID_HOME/build-tools/35.0.0" "$STAGE/sdk/build-tools/"
+          cp -a "$ANDROID_HOME/platform-tools/." "$STAGE/sdk/platform-tools/"
+          cp -a "$ANDROID_HOME/licenses/." "$STAGE/sdk/licenses/" || true
+          cp -a "$HOME/.gradle/caches" "$STAGE/gradle-user-home/"
+          cp -a "$HOME/.gradle/native" "$STAGE/gradle-user-home/" || true
+          cp -a "$RUNNER_TEMP/bundletool-all-1.18.3.jar" "$STAGE/"
+          cat > "$STAGE/TOOLCHAIN_INFO.txt" <<EOF
+          Gradle=8.13
+          GradleSHA256=20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78
+          AGP=8.13.2
+          compileSdk=36
+          buildTools=35.0.0
+          bundletool=1.18.3
+          cache_prefetch=lintRelease,testReleaseUnitTest,bundleRelease
+          EOF
+          cd "$RUNNER_TEMP"
+          tar --zstd -cf memoquest-android-offline-toolchain.tar.zst mq-toolchain
+          sha256sum memoquest-android-offline-toolchain.tar.zst
+          ls -lh memoquest-android-offline-toolchain.tar.zst
+
+      - name: Upload offline toolchain
+        uses: actions/upload-artifact@v4
+        with:
+          name: memoquest-android-offline-toolchain
+          path: ${{ runner.temp }}/memoquest-android-offline-toolchain.tar.zst
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
