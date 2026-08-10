@@ -141,7 +141,7 @@ jobs:
           curl -fL --retry 5 --retry-delay 2 https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar -o "$RUNNER_TEMP/bundletool-all-1.18.3.jar"
           java -jar "$RUNNER_TEMP/bundletool-all-1.18.3.jar" version
 
-      - name: Package offline toolchain
+      - name: Package and split offline toolchain
         shell: bash
         run: |
           set -euxo pipefail
@@ -166,14 +166,44 @@ jobs:
           EOF
           cd "$RUNNER_TEMP"
           tar --zstd -cf memoquest-android-offline-toolchain.tar.zst mq-toolchain
-          sha256sum memoquest-android-offline-toolchain.tar.zst
-          ls -lh memoquest-android-offline-toolchain.tar.zst
+          sha256sum memoquest-android-offline-toolchain.tar.zst > memoquest-toolchain.sha256
+          split -b 240M -d -a 2 memoquest-android-offline-toolchain.tar.zst memoquest-toolchain.part-
+          test -f memoquest-toolchain.part-00
+          test -f memoquest-toolchain.part-01
+          test -f memoquest-toolchain.part-02
+          ls -lh memoquest-toolchain.part-* memoquest-toolchain.sha256
 
-      - name: Upload offline toolchain
+      - name: Upload toolchain part 1
         uses: actions/upload-artifact@v4
         with:
-          name: memoquest-android-offline-toolchain
-          path: ${{ runner.temp }}/memoquest-android-offline-toolchain.tar.zst
+          name: memoquest-toolchain-part-00
+          path: ${{ runner.temp }}/memoquest-toolchain.part-00
           retention-days: 1
           compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload toolchain part 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: memoquest-toolchain-part-01
+          path: ${{ runner.temp }}/memoquest-toolchain.part-01
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload toolchain part 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: memoquest-toolchain-part-02
+          path: ${{ runner.temp }}/memoquest-toolchain.part-02
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload toolchain checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: memoquest-toolchain-checksum
+          path: ${{ runner.temp }}/memoquest-toolchain.sha256
+          retention-days: 1
           if-no-files-found: error
