@@ -4310,6 +4310,7 @@ function openMapModal() {
         document.body.classList.remove("startup-transition-lock");
         setStartupVisualState(true);
         overlay.setAttribute("aria-hidden", "false");
+        if ("inert" in overlay) overlay.inert = false;
         overlay.classList.remove("is-closing");
         requestAnimationFrame(() => {
             overlay.classList.add("is-open");
@@ -4334,6 +4335,7 @@ function openMapModal() {
         overlay.classList.remove("is-open");
         overlay.classList.remove("startup-sequence-run");
         overlay.classList.remove("startup-buttons-ready");
+        const appContainer = document.querySelector(".container");
         const focusedEl = document.activeElement;
         if (focusedEl && typeof focusedEl.blur === "function") focusedEl.blur();
         overlay.querySelectorAll(".startup-seq-btn").forEach(btn => {
@@ -4344,11 +4346,14 @@ function openMapModal() {
             btn.disabled = true;
         });
         overlay.setAttribute("aria-hidden", "true");
+        if (appContainer && "inert" in appContainer) appContainer.inert = true;
+        if ("inert" in overlay) overlay.inert = true;
         document.body.classList.add("startup-transition-lock");
         overlay.classList.add("is-closing");
         const timerId = window.setTimeout(() => {
             overlay.classList.remove("is-closing");
             overlay.dataset.closeTimer = "";
+            if (appContainer && "inert" in appContainer) appContainer.inert = document.body.classList.contains("startup-active");
             document.body.classList.remove("startup-transition-lock");
             if (typeof onClosed === "function") onClosed();
         }, STARTUP_OVERLAY_FADE_MS);
@@ -4433,6 +4438,8 @@ function openMapModal() {
                 setStartupVisualState(false);
                 if (overlay) {
                     overlay.classList.remove("is-open", "is-closing", "startup-sequence-run", "startup-buttons-ready");
+                    overlay.setAttribute("aria-hidden", "true");
+                    if ("inert" in overlay) overlay.inert = true;
                 }
                 appMode = "topografica";
                 showTopograficaMode(getSavedTopografiaStep());
