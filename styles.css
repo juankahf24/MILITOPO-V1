@@ -8044,6 +8044,10 @@ body.militopo-booting .container {
   transform: translate3d(0, 8px, 0);
 }
 
+body.startup-transition-lock {
+  pointer-events: none;
+}
+
 .startup-minimal-shell,
 .startup-title-letter,
 .startup-minimal-logo-wrap,

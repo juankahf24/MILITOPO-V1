@@ -4231,6 +4231,8 @@ function openMapModal() {
     function setStartupVisualState(startupActive) {
         document.body.classList.toggle("startup-active", !!startupActive);
         document.body.classList.toggle("topografia-visible", !startupActive);
+        const appContainer = document.querySelector(".container");
+        if (appContainer && "inert" in appContainer) appContainer.inert = !!startupActive;
         document.body.classList.remove("militopo-booting");
     }
 
@@ -4305,7 +4307,9 @@ function openMapModal() {
             clearTimeout(pendingClose);
             overlay.dataset.closeTimer = "";
         }
+        document.body.classList.remove("startup-transition-lock");
         setStartupVisualState(true);
+        overlay.setAttribute("aria-hidden", "false");
         overlay.classList.remove("is-closing");
         requestAnimationFrame(() => {
             overlay.classList.add("is-open");
@@ -4327,16 +4331,22 @@ function openMapModal() {
         overlay.classList.remove("is-open");
         overlay.classList.remove("startup-sequence-run");
         overlay.classList.remove("startup-buttons-ready");
+        const focusedEl = document.activeElement;
+        if (focusedEl && typeof focusedEl.blur === "function") focusedEl.blur();
         overlay.querySelectorAll(".startup-seq-btn").forEach(btn => {
             if (btn.dataset.startupPrevDisabled === "1" || btn.dataset.startupPrevDisabled === "0") {
                 btn.disabled = btn.dataset.startupPrevDisabled === "1";
                 delete btn.dataset.startupPrevDisabled;
             }
+            btn.disabled = true;
         });
+        overlay.setAttribute("aria-hidden", "true");
+        document.body.classList.add("startup-transition-lock");
         overlay.classList.add("is-closing");
         const timerId = window.setTimeout(() => {
             overlay.classList.remove("is-closing");
             overlay.dataset.closeTimer = "";
+            document.body.classList.remove("startup-transition-lock");
             if (typeof onClosed === "function") onClosed();
         }, STARTUP_OVERLAY_FADE_MS);
         overlay.dataset.closeTimer = String(timerId);
