@@ -4070,7 +4070,7 @@ function openMapModal() {
 
     function showOrientationPending() {
         const overlay = document.getElementById("startupModeOverlay");
-        const overlayVisible = overlay && overlay.style.display !== "none";
+        const overlayVisible = !!(overlay && overlay.classList.contains("is-open"));
         const notice = document.getElementById("startupPendingNotice");
         const card = document.getElementById("startupOriCard");
         if (notice && overlayVisible) {
@@ -4220,6 +4220,57 @@ function openMapModal() {
         } catch (e) {}
     }
 
+    const STARTUP_OVERLAY_FADE_MS = 720;
+    const STARTUP_ASSET_SOURCES = [
+        "icons/militopo-startup-premium-2048x3072.jpg",
+        "icons/militopo-startup-1536.png",
+        "icons/militopo-512.png"
+    ];
+    let startupAssetsPreloadPromise = null;
+
+    function setStartupVisualState(startupActive) {
+        document.body.classList.toggle("startup-active", !!startupActive);
+        document.body.classList.toggle("topografia-visible", !startupActive);
+        document.body.classList.remove("militopo-booting");
+    }
+
+    function preloadImageAsset(src) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                resolve();
+            };
+            const timer = window.setTimeout(finish, 2200);
+            img.onload = () => {
+                clearTimeout(timer);
+                finish();
+            };
+            img.onerror = () => {
+                clearTimeout(timer);
+                finish();
+            };
+            img.src = src;
+            if (typeof img.decode === "function") {
+                img.decode().then(() => {
+                    clearTimeout(timer);
+                    finish();
+                }).catch(() => {});
+            }
+        });
+    }
+
+    function preloadStartupAssets() {
+        if (!startupAssetsPreloadPromise) {
+            startupAssetsPreloadPromise = Promise.allSettled(
+                STARTUP_ASSET_SOURCES.map(src => preloadImageAsset(src))
+            ).then(() => undefined);
+        }
+        return startupAssetsPreloadPromise;
+    }
+
     function restartStartupSequence(overlay) {
         if (!overlay) return;
         const readyTimer = Number(overlay.dataset.buttonsReadyTimer || 0);
@@ -4260,17 +4311,20 @@ function openMapModal() {
             clearTimeout(pendingClose);
             overlay.dataset.closeTimer = "";
         }
+        setStartupVisualState(true);
         overlay.classList.remove("is-closing");
-        overlay.style.display = "flex";
         requestAnimationFrame(() => {
             overlay.classList.add("is-open");
             restartStartupSequence(overlay);
         });
     }
 
-    function closeStartupOverlaySmooth() {
+    function closeStartupOverlaySmooth(onClosed) {
         const overlay = document.getElementById("startupModeOverlay");
-        if (!overlay) return;
+        if (!overlay) {
+            if (typeof onClosed === "function") onClosed();
+            return;
+        }
         const readyTimer = Number(overlay.dataset.buttonsReadyTimer || 0);
         if (readyTimer) {
             clearTimeout(readyTimer);
@@ -4287,20 +4341,23 @@ function openMapModal() {
         });
         overlay.classList.add("is-closing");
         const timerId = window.setTimeout(() => {
-            overlay.style.display = "none";
             overlay.classList.remove("is-closing");
             overlay.dataset.closeTimer = "";
-        }, 260);
+            if (typeof onClosed === "function") onClosed();
+        }, STARTUP_OVERLAY_FADE_MS);
         overlay.dataset.closeTimer = String(timerId);
     }
 
     function enterStartupMode(mode) {
         if (mode === "orientacion") {
-            window.location.href = "orientacion/";
+            closeStartupOverlaySmooth(() => {
+                window.location.href = "orientacion/";
+            });
             return;
         }
         applyTopografiaNightTheme();
         appMode = "topografica";
+        setStartupVisualState(false);
         closeStartupOverlaySmooth();
         setTopografiaUrlState();
         try {
@@ -4315,7 +4372,7 @@ function openMapModal() {
             try { hideGuide = localStorage.getItem("militopo_topografia_guide_hidden") === "1"; } catch (e) {}
             const instrModal = document.getElementById("instructionsModal");
             if (instrModal && !hideGuide) instrModal.style.display = "flex";
-        }, 260);
+        }, STARTUP_OVERLAY_FADE_MS);
     }
 
     function goToStep(step) {
@@ -4364,17 +4421,22 @@ function openMapModal() {
         // La URL diferencia claramente el selector general de la rama Topografía:
         //   /MILITOPO/                  -> selector inicial
         //   /MILITOPO/?modo=topografia -> Topografía y recarga estable dentro de la rama
-        if (overlay) {
-            if (openTopografia) closeStartupOverlaySmooth();
-            else openStartupOverlaySmooth();
-        }
-        if (openTopografia) {
-            appMode = "topografica";
-            showTopograficaMode(getSavedTopografiaStep());
-        } else {
+        const finalizeInitialMode = () => {
+            if (openTopografia) {
+                setStartupVisualState(false);
+                if (overlay) {
+                    overlay.classList.remove("is-open", "is-closing", "startup-sequence-run", "startup-buttons-ready");
+                }
+                appMode = "topografica";
+                showTopograficaMode(getSavedTopografiaStep());
+                return;
+            }
+            setStartupVisualState(true);
+            if (overlay) openStartupOverlaySmooth();
             // Prepara Topografía detrás del selector sin alterar la pantalla inicial.
             goToStep(getSavedTopografiaStep());
-        }
+        };
+        preloadStartupAssets().finally(() => requestAnimationFrame(finalizeInitialMode));
 
         document.getElementById("startupTopoBtn")?.addEventListener("click", () => enterStartupMode("topografica"));
         document.getElementById("startupOriBtn")?.addEventListener("click", () => enterStartupMode("orientacion"));

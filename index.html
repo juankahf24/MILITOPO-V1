@@ -4,13 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
     <title>MILITOPO | Sistema de Recorridos Topográficos</title>
-    <meta name="theme-color" content="#20351f">
+    <meta name="theme-color" content="#0a0e0a">
+    <meta name="color-scheme" content="dark">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" type="image/png" sizes="192x192" href="icons/militopo-192.png">
     <link rel="apple-touch-icon" href="icons/militopo-192.png">
+    <link rel="preload" as="image" href="icons/militopo-startup-premium-2048x3072.jpg" fetchpriority="high">
+    <link rel="preload" as="image" href="icons/militopo-startup-1536.png" fetchpriority="high">
+    <link rel="preload" as="image" href="icons/militopo-512.png" fetchpriority="high">
+    <style>
+        html, body { background: #0a0e0a; min-height: 100%; }
+        body { margin: 0; }
+    </style>
     <!-- Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -30,7 +38,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <link rel="stylesheet" href="styles.css?v=inicio-premium-v49">
 </head>
-<body>
+<body class="militopo-booting">
 
 <div class="container">
     <div class="header header-clean-topografia">
