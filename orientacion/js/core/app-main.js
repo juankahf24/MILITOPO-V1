@@ -100,7 +100,11 @@ function bindStepTabs(){document.querySelectorAll(".step-tab").forEach(btn=>btn.
 
     document.querySelectorAll(".card").forEach(c=>c.classList.remove("active"));
     const target=document.getElementById("step"+currentAppStep);
-    if(target)target.classList.add("active");
+    if(target){
+        target.classList.add("active");
+        target.classList.remove("ori-step-fluent-enter");
+        requestAnimationFrame(()=>target.classList.add("ori-step-fluent-enter"));
+    }
 
     document.querySelectorAll(".step-tab").forEach(btn=>{
         const step=Number(btn.dataset.step);
