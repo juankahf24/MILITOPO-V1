@@ -4220,6 +4220,13 @@ function openMapModal() {
         } catch (e) {}
     }
 
+    function restartStartupSequence(overlay) {
+        if (!overlay) return;
+        overlay.classList.remove("startup-sequence-run");
+        void overlay.offsetWidth;
+        requestAnimationFrame(() => overlay.classList.add("startup-sequence-run"));
+    }
+
     function openStartupOverlaySmooth() {
         const overlay = document.getElementById("startupModeOverlay");
         if (!overlay) return;
@@ -4230,13 +4237,17 @@ function openMapModal() {
         }
         overlay.classList.remove("is-closing");
         overlay.style.display = "flex";
-        requestAnimationFrame(() => overlay.classList.add("is-open"));
+        requestAnimationFrame(() => {
+            overlay.classList.add("is-open");
+            restartStartupSequence(overlay);
+        });
     }
 
     function closeStartupOverlaySmooth() {
         const overlay = document.getElementById("startupModeOverlay");
         if (!overlay) return;
         overlay.classList.remove("is-open");
+        overlay.classList.remove("startup-sequence-run");
         overlay.classList.add("is-closing");
         const timerId = window.setTimeout(() => {
             overlay.style.display = "none";
