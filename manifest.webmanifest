@@ -7,7 +7,7 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#20351f",
+  "background_color": "#0a0e0a",
   "theme_color": "#20351f",
   "lang": "es",
   "categories": ["navigation", "utilities", "sports"],

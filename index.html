@@ -9,16 +9,25 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        html, body { background: #0a0e0a !important; margin: 0; min-height: 100%; }
+        body { background: #0a0e0a !important; }
+        #startupModeOverlay {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            display: block;
+            background: #0a0e0a;
+            opacity: 1;
+            visibility: visible;
+        }
+    </style>
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" type="image/png" sizes="192x192" href="icons/militopo-192.png">
     <link rel="apple-touch-icon" href="icons/militopo-192.png">
     <link rel="preload" as="image" href="icons/militopo-startup-premium-2048x3072.jpg" fetchpriority="high">
     <link rel="preload" as="image" href="icons/militopo-startup-1536.png" fetchpriority="high">
     <link rel="preload" as="image" href="icons/militopo-512.png" fetchpriority="high">
-    <style>
-        html, body { background: #0a0e0a; min-height: 100%; }
-        body { margin: 0; }
-    </style>
     <!-- Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -39,6 +48,25 @@
     <link rel="stylesheet" href="styles.css?v=inicio-premium-v49">
 </head>
 <body class="militopo-booting">
+
+<div id="startupModeOverlay" class="startup-overlay startup-overlay-minimal" role="dialog" aria-modal="true" aria-labelledby="startupTitle">
+    <div class="startup-backdrop-grid" aria-hidden="true"></div>
+    <div class="startup-minimal-shell">
+        <div class="startup-minimal-logo-wrap">
+            <img class="startup-minimal-logo" src="icons/militopo-512.png" alt="Logo MILITOPO">
+        </div>
+        <h1 id="startupTitle" class="startup-minimal-title" aria-label="MILITOPO">
+            <span class="startup-title-letter" style="--startup-letter-index:0;" aria-hidden="true">M</span><span class="startup-title-letter" style="--startup-letter-index:1;" aria-hidden="true">I</span><span class="startup-title-letter" style="--startup-letter-index:2;" aria-hidden="true">L</span><span class="startup-title-letter" style="--startup-letter-index:3;" aria-hidden="true">I</span><span class="startup-title-letter" style="--startup-letter-index:4;" aria-hidden="true">T</span><span class="startup-title-letter" style="--startup-letter-index:5;" aria-hidden="true">O</span><span class="startup-title-letter" style="--startup-letter-index:6;" aria-hidden="true">P</span><span class="startup-title-letter" style="--startup-letter-index:7;" aria-hidden="true">O</span>
+        </h1>
+        <div class="startup-minimal-actions startup-seq-buttons" aria-label="Ramas disponibles">
+            <button id="startupTopoBtn" type="button" class="startup-minimal-btn startup-minimal-btn-primary startup-seq-btn">Entrar en Topografía</button>
+            <button id="startupOriBtn" type="button" class="startup-minimal-btn startup-minimal-btn-secondary startup-seq-btn">Entrar en Orientación</button>
+        </div>
+        <div id="startupPendingNotice" class="startup-notice startup-notice-floating" hidden>
+            🧭 Orientación estará disponible cuando incorpores esa rama.
+        </div>
+    </div>
+</div>
 
 <div class="container">
     <div class="header header-clean-topografia">
@@ -281,30 +309,6 @@
         </div>
     </div>
 </div>
-
-
-
-
-
-<div id="startupModeOverlay" class="startup-overlay startup-overlay-minimal" role="dialog" aria-modal="true" aria-labelledby="startupTitle">
-    <div class="startup-backdrop-grid" aria-hidden="true"></div>
-    <div class="startup-minimal-shell">
-        <div class="startup-minimal-logo-wrap">
-            <img class="startup-minimal-logo" src="icons/militopo-512.png" alt="Logo MILITOPO">
-        </div>
-        <h1 id="startupTitle" class="startup-minimal-title" aria-label="MILITOPO">
-            <span class="startup-title-letter" style="--startup-letter-index:0;" aria-hidden="true">M</span><span class="startup-title-letter" style="--startup-letter-index:1;" aria-hidden="true">I</span><span class="startup-title-letter" style="--startup-letter-index:2;" aria-hidden="true">L</span><span class="startup-title-letter" style="--startup-letter-index:3;" aria-hidden="true">I</span><span class="startup-title-letter" style="--startup-letter-index:4;" aria-hidden="true">T</span><span class="startup-title-letter" style="--startup-letter-index:5;" aria-hidden="true">O</span><span class="startup-title-letter" style="--startup-letter-index:6;" aria-hidden="true">P</span><span class="startup-title-letter" style="--startup-letter-index:7;" aria-hidden="true">O</span>
-        </h1>
-        <div class="startup-minimal-actions startup-seq-buttons" aria-label="Ramas disponibles">
-            <button id="startupTopoBtn" type="button" class="startup-minimal-btn startup-minimal-btn-primary startup-seq-btn">Entrar en Topografía</button>
-            <button id="startupOriBtn" type="button" class="startup-minimal-btn startup-minimal-btn-secondary startup-seq-btn">Entrar en Orientación</button>
-        </div>
-        <div id="startupPendingNotice" class="startup-notice startup-notice-floating" hidden>
-            🧭 Orientación estará disponible cuando incorpores esa rama.
-        </div>
-    </div>
-</div>
-
 <div id="orientacionShell" style="display:none;">
     <div class="steps-container">
         <div class="step active">PASO 1 · CONFIGURAR ORIENTACIÓN</div>

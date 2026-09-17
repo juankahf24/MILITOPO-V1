@@ -8,6 +8,14 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MILITOPO Participante">
   <title>MILITOPO Participante</title>
+  <style>
+    html,body{background:#0a0e0a!important;margin:0;min-height:100%}
+    body.participant-page-booting{opacity:0;background:#0a0e0a!important;-webkit-transition:opacity .42s ease;transition:opacity .42s ease}
+    body.participant-page-ready{opacity:1}
+    @media (prefers-reduced-motion: reduce){
+      body.participant-page-booting{-webkit-transition:none!important;transition:none!important;opacity:1!important}
+    }
+  </style>
   <script>
     (function(){
       try{
@@ -29,7 +37,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="icons/participante-512.png">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="participant-page-booting">
   <button id="shellMenuBtn" class="shell-menu-btn shell-menu-floating" type="button" aria-label="Opciones">⋮</button>
 
   <main id="shellMain" class="participant-shell-main">
@@ -86,5 +94,11 @@
   <div id="shellToast" class="shell-toast" role="status"></div>
   <script src="app.js"></script>
   <script type="module" src="../js/live/live-phase2.js?v=v72-seguimiento-en-vivo"></script>
+  <script>
+    window.addEventListener("load",function(){
+      document.body.classList.add("participant-page-ready");
+      requestAnimationFrame(function(){ document.body.classList.remove("participant-page-booting"); });
+    });
+  </script>
 </body>
 </html>

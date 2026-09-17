@@ -4220,7 +4220,9 @@ function openMapModal() {
         } catch (e) {}
     }
 
-    const STARTUP_OVERLAY_FADE_MS = 720;
+    const STARTUP_OVERLAY_FADE_MS = 520;
+    const STARTUP_CONTENT_REVEAL_DELAY_MS = 96;
+    const PAGE_EXIT_FADE_MS = 340;
     const STARTUP_ASSET_SOURCES = [
         "icons/militopo-startup-premium-2048x3072.jpg",
         "icons/militopo-startup-1536.png",
@@ -4228,6 +4230,53 @@ function openMapModal() {
     ];
     let startupAssetsPreloadPromise = null;
     let startupTransitionKeyLockHandler = null;
+
+    function prefersReducedMotion() {
+        try {
+            return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function resetAppContentEntrance() {
+        const appContainer = document.querySelector(".container");
+        if (!appContainer) return null;
+        const pendingReveal = Number(appContainer.dataset.enterTimer || 0);
+        if (pendingReveal) {
+            clearTimeout(pendingReveal);
+            appContainer.dataset.enterTimer = "";
+        }
+        appContainer.classList.remove("app-content-enter", "app-content-entered");
+        return appContainer;
+    }
+
+    function primeAppContentEntrance() {
+        const appContainer = resetAppContentEntrance();
+        if (!appContainer) return;
+        appContainer.classList.add("app-content-enter");
+        void appContainer.offsetWidth;
+        const revealDelay = prefersReducedMotion() ? 0 : STARTUP_CONTENT_REVEAL_DELAY_MS;
+        const timerId = window.setTimeout(() => {
+            appContainer.dataset.enterTimer = "";
+            requestAnimationFrame(() => appContainer.classList.add("app-content-entered"));
+        }, revealDelay);
+        appContainer.dataset.enterTimer = String(timerId);
+    }
+
+    function beginPageExitTransition(onComplete) {
+        const finish = () => {
+            document.body.classList.remove("startup-transition-lock");
+            disableStartupTransitionFocusLock();
+            if (typeof onComplete === "function") onComplete();
+        };
+        if (document.body.classList.contains("page-exit")) return;
+        document.body.classList.add("startup-transition-lock", "page-exit");
+        enableStartupTransitionFocusLock();
+        const focusedEl = document.activeElement;
+        if (focusedEl && typeof focusedEl.blur === "function") focusedEl.blur();
+        window.setTimeout(finish, prefersReducedMotion() ? 0 : PAGE_EXIT_FADE_MS);
+    }
 
     function setStartupVisualState(startupActive) {
         document.body.classList.toggle("startup-active", !!startupActive);
@@ -4323,7 +4372,8 @@ function openMapModal() {
             overlay.dataset.closeTimer = "";
         }
         disableStartupTransitionFocusLock();
-        document.body.classList.remove("startup-transition-lock");
+        document.body.classList.remove("startup-transition-lock", "page-exit");
+        resetAppContentEntrance();
         setStartupVisualState(true);
         overlay.setAttribute("aria-hidden", "false");
         if ("inert" in overlay) overlay.inert = false;
@@ -4382,13 +4432,17 @@ function openMapModal() {
 
     function enterStartupMode(mode) {
         if (mode === "orientacion") {
-            closeStartupOverlaySmooth(() => {
+            const overlay = document.getElementById("startupModeOverlay");
+            overlay?.querySelectorAll(".startup-seq-btn").forEach(btn => { btn.disabled = true; });
+            if (overlay && "inert" in overlay) overlay.inert = true;
+            beginPageExitTransition(() => {
                 window.location.href = "orientacion/";
             });
             return;
         }
         applyTopografiaNightTheme();
         appMode = "topografica";
+        primeAppContentEntrance();
         setStartupVisualState(false);
         closeStartupOverlaySmooth();
         setTopografiaUrlState();
@@ -4444,6 +4498,10 @@ function openMapModal() {
         cargarStorage();
         generarOpcionesRecorridos();
         restaurarSeleccionNumRecorridos();
+        window.addEventListener("pageshow", () => {
+            document.body.classList.remove("page-exit", "startup-transition-lock");
+            disableStartupTransitionFocusLock();
+        });
 
         const startupParams = new URLSearchParams(window.location.search || "");
         const overlay = document.getElementById("startupModeOverlay");
@@ -4455,6 +4513,7 @@ function openMapModal() {
         //   /MILITOPO/?modo=topografia -> Topografía y recarga estable dentro de la rama
         const finalizeInitialMode = () => {
             if (openTopografia) {
+                resetAppContentEntrance();
                 setStartupVisualState(false);
                 if (overlay) {
                     overlay.classList.remove("is-open", "is-closing", "startup-sequence-run", "startup-buttons-ready");

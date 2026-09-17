@@ -8,6 +8,16 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+html,body{background:#0a0e0a!important;margin:0;min-height:100%}
+body.ori-page-booting{opacity:0;background:#0a0e0a!important;-webkit-transition:opacity .48s ease;transition:opacity .48s ease}
+body.ori-page-booting .app{opacity:0;-webkit-transform:translate3d(0,12px,0);transform:translate3d(0,12px,0);will-change:opacity,transform;-webkit-transition:opacity .52s ease,-webkit-transform .52s cubic-bezier(.22,.8,.24,1);transition:opacity .52s ease,transform .52s cubic-bezier(.22,.8,.24,1)}
+body.ori-page-ready{opacity:1}
+body.ori-page-ready .app{opacity:1;-webkit-transform:translate3d(0,0,0);transform:translate3d(0,0,0)}
+@media (prefers-reduced-motion: reduce){
+body.ori-page-booting,body.ori-page-booting .app{opacity:1!important;-webkit-transform:none!important;transform:none!important;-webkit-transition:none!important;transition:none!important}
+}
+</style>
 <link rel="manifest" href="../manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="../icons/militopo-192.png">
 <link rel="apple-touch-icon" href="../icons/militopo-192.png">
@@ -60,7 +70,7 @@
 .pnoa-overzoom-tile{image-rendering:auto;filter:contrast(1.035) saturate(1.025);}
 </style>
 </head>
-<body>
+<body class="ori-page-booting">
 
 <div id="militopoAccessGate" class="militopo-access-gate" style="display:none;">
     <div class="militopo-access-card">
@@ -603,6 +613,12 @@
 
 <script src="js/app.js?v=v69-restauracion-coordenadas-pdf"></script>
 <script type="module" src="js/live/live-phase2.js?v=v72-seguimiento-en-vivo"></script>
+<script>
+window.addEventListener("load",function(){
+  document.body.classList.add("ori-page-ready");
+  requestAnimationFrame(function(){ document.body.classList.remove("ori-page-booting"); });
+});
+</script>
 <script>
 (function(){
   if (!("serviceWorker" in navigator) || !("caches" in window) || !/^https?:$/.test(location.protocol)) return;
