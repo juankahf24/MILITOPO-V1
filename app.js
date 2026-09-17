@@ -4253,12 +4253,6 @@ function openMapModal() {
                 finish();
             };
             img.src = src;
-            if (typeof img.decode === "function") {
-                img.decode().then(() => {
-                    clearTimeout(timer);
-                    finish();
-                }).catch(() => {});
-            }
         });
     }
 
