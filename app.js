@@ -4070,7 +4070,7 @@ function openMapModal() {
 
     function showOrientationPending() {
         const overlay = document.getElementById("startupModeOverlay");
-        const overlayVisible = overlay && overlay.style.display !== "none";
+        const overlayVisible = !!(overlay && overlay.classList.contains("is-open"));
         const notice = document.getElementById("startupPendingNotice");
         const card = document.getElementById("startupOriCard");
         if (notice && overlayVisible) {
@@ -4220,6 +4220,68 @@ function openMapModal() {
         } catch (e) {}
     }
 
+    const STARTUP_OVERLAY_FADE_MS = 720;
+    const STARTUP_ASSET_SOURCES = [
+        "icons/militopo-startup-premium-2048x3072.jpg",
+        "icons/militopo-startup-1536.png",
+        "icons/militopo-512.png"
+    ];
+    let startupAssetsPreloadPromise = null;
+    let startupTransitionKeyLockHandler = null;
+
+    function setStartupVisualState(startupActive) {
+        document.body.classList.toggle("startup-active", !!startupActive);
+        document.body.classList.toggle("topografia-visible", !startupActive);
+        const appContainer = document.querySelector(".container");
+        if (appContainer && "inert" in appContainer) appContainer.inert = !!startupActive;
+        document.body.classList.remove("militopo-booting");
+    }
+
+    function preloadImageAsset(src) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                resolve();
+            };
+            const timer = window.setTimeout(finish, 2200);
+            img.onload = () => {
+                clearTimeout(timer);
+                finish();
+            };
+            img.onerror = () => {
+                clearTimeout(timer);
+                finish();
+            };
+            img.src = src;
+        });
+    }
+
+    function preloadStartupAssets() {
+        if (!startupAssetsPreloadPromise) {
+            startupAssetsPreloadPromise = Promise.allSettled(
+                STARTUP_ASSET_SOURCES.map(src => preloadImageAsset(src))
+            ).then(() => undefined);
+        }
+        return startupAssetsPreloadPromise;
+    }
+
+    function enableStartupTransitionFocusLock() {
+        if (startupTransitionKeyLockHandler) return;
+        startupTransitionKeyLockHandler = (e) => {
+            if (e.key === "Tab") e.preventDefault();
+        };
+        document.addEventListener("keydown", startupTransitionKeyLockHandler, true);
+    }
+
+    function disableStartupTransitionFocusLock() {
+        if (!startupTransitionKeyLockHandler) return;
+        document.removeEventListener("keydown", startupTransitionKeyLockHandler, true);
+        startupTransitionKeyLockHandler = null;
+    }
+
     function restartStartupSequence(overlay) {
         if (!overlay) return;
         const readyTimer = Number(overlay.dataset.buttonsReadyTimer || 0);
@@ -4260,17 +4322,27 @@ function openMapModal() {
             clearTimeout(pendingClose);
             overlay.dataset.closeTimer = "";
         }
+        disableStartupTransitionFocusLock();
+        document.body.classList.remove("startup-transition-lock");
+        setStartupVisualState(true);
+        overlay.setAttribute("aria-hidden", "false");
+        if ("inert" in overlay) overlay.inert = false;
         overlay.classList.remove("is-closing");
-        overlay.style.display = "flex";
         requestAnimationFrame(() => {
             overlay.classList.add("is-open");
-            restartStartupSequence(overlay);
+            preloadStartupAssets().finally(() => {
+                if (!overlay.classList.contains("is-open")) return;
+                restartStartupSequence(overlay);
+            });
         });
     }
 
-    function closeStartupOverlaySmooth() {
+    function closeStartupOverlaySmooth(onClosed) {
         const overlay = document.getElementById("startupModeOverlay");
-        if (!overlay) return;
+        if (!overlay) {
+            if (typeof onClosed === "function") onClosed();
+            return;
+        }
         const readyTimer = Number(overlay.dataset.buttonsReadyTimer || 0);
         if (readyTimer) {
             clearTimeout(readyTimer);
@@ -4279,28 +4351,45 @@ function openMapModal() {
         overlay.classList.remove("is-open");
         overlay.classList.remove("startup-sequence-run");
         overlay.classList.remove("startup-buttons-ready");
+        const appContainer = document.querySelector(".container");
+        const focusedEl = document.activeElement;
+        if (focusedEl && typeof focusedEl.blur === "function") focusedEl.blur();
+        overlay.setAttribute("tabindex", "-1");
+        if (typeof overlay.focus === "function") overlay.focus({ preventScroll: true });
         overlay.querySelectorAll(".startup-seq-btn").forEach(btn => {
             if (btn.dataset.startupPrevDisabled === "1" || btn.dataset.startupPrevDisabled === "0") {
                 btn.disabled = btn.dataset.startupPrevDisabled === "1";
                 delete btn.dataset.startupPrevDisabled;
             }
+            btn.disabled = true;
         });
+        overlay.setAttribute("aria-hidden", "true");
+        if (appContainer && "inert" in appContainer) appContainer.inert = true;
+        if ("inert" in overlay) overlay.inert = true;
+        document.body.classList.add("startup-transition-lock");
+        enableStartupTransitionFocusLock();
         overlay.classList.add("is-closing");
         const timerId = window.setTimeout(() => {
-            overlay.style.display = "none";
             overlay.classList.remove("is-closing");
             overlay.dataset.closeTimer = "";
-        }, 260);
+            if (appContainer && "inert" in appContainer) appContainer.inert = document.body.classList.contains("startup-active");
+            document.body.classList.remove("startup-transition-lock");
+            disableStartupTransitionFocusLock();
+            if (typeof onClosed === "function") onClosed();
+        }, STARTUP_OVERLAY_FADE_MS);
         overlay.dataset.closeTimer = String(timerId);
     }
 
     function enterStartupMode(mode) {
         if (mode === "orientacion") {
-            window.location.href = "orientacion/";
+            closeStartupOverlaySmooth(() => {
+                window.location.href = "orientacion/";
+            });
             return;
         }
         applyTopografiaNightTheme();
         appMode = "topografica";
+        setStartupVisualState(false);
         closeStartupOverlaySmooth();
         setTopografiaUrlState();
         try {
@@ -4315,7 +4404,7 @@ function openMapModal() {
             try { hideGuide = localStorage.getItem("militopo_topografia_guide_hidden") === "1"; } catch (e) {}
             const instrModal = document.getElementById("instructionsModal");
             if (instrModal && !hideGuide) instrModal.style.display = "flex";
-        }, 260);
+        }, STARTUP_OVERLAY_FADE_MS);
     }
 
     function goToStep(step) {
@@ -4364,17 +4453,23 @@ function openMapModal() {
         // La URL diferencia claramente el selector general de la rama Topografía:
         //   /MILITOPO/                  -> selector inicial
         //   /MILITOPO/?modo=topografia -> Topografía y recarga estable dentro de la rama
-        if (overlay) {
-            if (openTopografia) closeStartupOverlaySmooth();
-            else openStartupOverlaySmooth();
-        }
-        if (openTopografia) {
-            appMode = "topografica";
-            showTopograficaMode(getSavedTopografiaStep());
-        } else {
-            // Prepara Topografía detrás del selector sin alterar la pantalla inicial.
-            goToStep(getSavedTopografiaStep());
-        }
+        const finalizeInitialMode = () => {
+            if (openTopografia) {
+                setStartupVisualState(false);
+                if (overlay) {
+                    overlay.classList.remove("is-open", "is-closing", "startup-sequence-run", "startup-buttons-ready");
+                    overlay.setAttribute("aria-hidden", "true");
+                    if ("inert" in overlay) overlay.inert = true;
+                }
+                appMode = "topografica";
+                showTopograficaMode(getSavedTopografiaStep());
+                return;
+            }
+            setStartupVisualState(true);
+            if (overlay) openStartupOverlaySmooth();
+        };
+        requestAnimationFrame(finalizeInitialMode);
+        preloadStartupAssets();
 
         document.getElementById("startupTopoBtn")?.addEventListener("click", () => enterStartupMode("topografica"));
         document.getElementById("startupOriBtn")?.addEventListener("click", () => enterStartupMode("orientacion"));

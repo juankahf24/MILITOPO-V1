@@ -7963,13 +7963,16 @@ body {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity .25s ease, visibility .25s ease;
+  transform: translateZ(0);
+  will-change: opacity, visibility;
+  transition: opacity .72s ease, visibility 0s linear .72s;
 }
 
 .startup-overlay.is-open {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+  transition-delay: 0s;
 }
 
 .startup-overlay.is-open .startup-minimal-shell {
@@ -7988,6 +7991,7 @@ body {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  transition: opacity .72s ease, visibility 0s linear .72s;
 }
 
 @keyframes stepFluentIn {
@@ -8007,6 +8011,54 @@ body {
 
 .step-content.step-fluent-enter {
   animation: stepFluentIn .24s ease;
+}
+
+html,
+body {
+  background-color: #0a0e0a !important;
+}
+
+body {
+  transition: none !important;
+}
+
+.container {
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(0, 8px, 0);
+  will-change: opacity, transform;
+  transition: opacity .72s ease, transform .72s ease, visibility 0s linear .72s;
+}
+
+body.topografia-visible .container {
+  opacity: 1;
+  visibility: visible;
+  transform: translate3d(0, 0, 0);
+  transition-delay: .06s, .06s, 0s;
+}
+
+body.startup-active .container,
+body.militopo-booting .container {
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(0, 8px, 0);
+}
+
+body.startup-transition-lock {
+  touch-action: none;
+}
+
+body.startup-transition-lock .container,
+body.startup-transition-lock #startupModeOverlay {
+  pointer-events: none;
+}
+
+.startup-minimal-shell,
+.startup-title-letter,
+.startup-minimal-logo-wrap,
+.startup-seq-buttons .startup-seq-btn {
+  transform: translateZ(0);
+  will-change: transform, opacity, filter;
 }
 
 /* ===== Startup secuencia premium: letras -> logo -> botones ===== */
