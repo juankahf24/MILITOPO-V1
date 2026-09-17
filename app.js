@@ -4227,6 +4227,7 @@ function openMapModal() {
         "icons/militopo-512.png"
     ];
     let startupAssetsPreloadPromise = null;
+    let startupTransitionKeyLockHandler = null;
 
     function setStartupVisualState(startupActive) {
         document.body.classList.toggle("startup-active", !!startupActive);
@@ -4265,6 +4266,20 @@ function openMapModal() {
             ).then(() => undefined);
         }
         return startupAssetsPreloadPromise;
+    }
+
+    function enableStartupTransitionFocusLock() {
+        if (startupTransitionKeyLockHandler) return;
+        startupTransitionKeyLockHandler = (e) => {
+            if (e.key === "Tab") e.preventDefault();
+        };
+        document.addEventListener("keydown", startupTransitionKeyLockHandler, true);
+    }
+
+    function disableStartupTransitionFocusLock() {
+        if (!startupTransitionKeyLockHandler) return;
+        document.removeEventListener("keydown", startupTransitionKeyLockHandler, true);
+        startupTransitionKeyLockHandler = null;
     }
 
     function restartStartupSequence(overlay) {
@@ -4307,6 +4322,7 @@ function openMapModal() {
             clearTimeout(pendingClose);
             overlay.dataset.closeTimer = "";
         }
+        disableStartupTransitionFocusLock();
         document.body.classList.remove("startup-transition-lock");
         setStartupVisualState(true);
         overlay.setAttribute("aria-hidden", "false");
@@ -4338,6 +4354,8 @@ function openMapModal() {
         const appContainer = document.querySelector(".container");
         const focusedEl = document.activeElement;
         if (focusedEl && typeof focusedEl.blur === "function") focusedEl.blur();
+        overlay.setAttribute("tabindex", "-1");
+        if (typeof overlay.focus === "function") overlay.focus({ preventScroll: true });
         overlay.querySelectorAll(".startup-seq-btn").forEach(btn => {
             if (btn.dataset.startupPrevDisabled === "1" || btn.dataset.startupPrevDisabled === "0") {
                 btn.disabled = btn.dataset.startupPrevDisabled === "1";
@@ -4349,12 +4367,14 @@ function openMapModal() {
         if (appContainer && "inert" in appContainer) appContainer.inert = true;
         if ("inert" in overlay) overlay.inert = true;
         document.body.classList.add("startup-transition-lock");
+        enableStartupTransitionFocusLock();
         overlay.classList.add("is-closing");
         const timerId = window.setTimeout(() => {
             overlay.classList.remove("is-closing");
             overlay.dataset.closeTimer = "";
             if (appContainer && "inert" in appContainer) appContainer.inert = document.body.classList.contains("startup-active");
             document.body.classList.remove("startup-transition-lock");
+            disableStartupTransitionFocusLock();
             if (typeof onClosed === "function") onClosed();
         }, STARTUP_OVERLAY_FADE_MS);
         overlay.dataset.closeTimer = String(timerId);
@@ -4447,8 +4467,6 @@ function openMapModal() {
             }
             setStartupVisualState(true);
             if (overlay) openStartupOverlaySmooth();
-            // Prepara Topografía detrás del selector sin alterar la pantalla inicial.
-            goToStep(getSavedTopografiaStep());
         };
         requestAnimationFrame(finalizeInitialMode);
         preloadStartupAssets();
