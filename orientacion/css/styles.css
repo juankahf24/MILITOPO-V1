@@ -2381,3 +2381,66 @@ th,td{
   .analysis-track-choice-info .analysis-track-adjusted{font-size:.78rem!important;gap:5px}
   .analysis-track-choice-info .analysis-track-adjusted b{font-size:1em!important}
 }
+
+/* ===== Fluidez UX · Orientación ===== */
+.btn,
+.step-tab,
+.layer-btn,
+.militopo-access-btn,
+#militopoBackToAccessBtn {
+    transition: transform .16s ease, box-shadow .2s ease, filter .2s ease, background-color .2s ease, border-color .2s ease;
+}
+
+.btn:active,
+.step-tab:active,
+.layer-btn:active,
+.militopo-access-btn:active,
+#militopoBackToAccessBtn:active {
+    transform: translateY(1px) scale(.992);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .btn:hover,
+    .step-tab:hover,
+    .layer-btn:hover,
+    .militopo-access-btn:hover,
+    #militopoBackToAccessBtn:hover {
+        transform: translateY(-1px);
+    }
+}
+
+.militopo-access-gate.is-open {
+    animation: militopoGateFadeIn .24s ease both;
+}
+
+.militopo-access-gate.is-open .militopo-access-card {
+    animation: militopoGateCardIn .28s cubic-bezier(.22,.8,.24,1) both;
+}
+
+.militopo-access-gate.is-closing {
+    animation: militopoGateFadeOut .2s ease both;
+}
+
+.card.ori-step-fluent-enter {
+    animation: oriStepFluentIn .22s cubic-bezier(.22,.8,.24,1) both;
+}
+
+@keyframes militopoGateFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes militopoGateFadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+@keyframes militopoGateCardIn {
+    from { opacity: 0; transform: translateY(12px) scale(.986); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes oriStepFluentIn {
+    from { opacity: .01; transform: translateY(8px) scale(.995); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}

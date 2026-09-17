@@ -234,12 +234,37 @@
         return document.getElementById("militopoParticipantOnlyShell");
     }
 
+    function openGateSmooth(){
+        const gate = gateEl();
+        if(!gate) return;
+        const pendingClose = Number(gate.dataset.closeTimer || 0);
+        if(pendingClose){
+            clearTimeout(pendingClose);
+            gate.dataset.closeTimer = "";
+        }
+        gate.classList.remove("is-closing");
+        gate.style.display = "flex";
+        requestAnimationFrame(()=>gate.classList.add("is-open"));
+    }
+
+    function closeGateSmooth(){
+        const gate = gateEl();
+        if(!gate) return;
+        gate.classList.remove("is-open");
+        gate.classList.add("is-closing");
+        const timerId = window.setTimeout(()=>{
+            gate.style.display = "none";
+            gate.classList.remove("is-closing");
+            gate.dataset.closeTimer = "";
+        }, 240);
+        gate.dataset.closeTimer = String(timerId);
+    }
+
     function showGate(){
         setAppVisible(false);
         const shell = participantShell();
         if(shell) shell.style.display = "none";
-        const gate = gateEl();
-        if(gate) gate.style.display = "flex";
+        openGateSmooth();
         const panel = document.getElementById("militopoPasswordPanel");
         const choices = document.getElementById("militopoAccessChoices");
         const error = document.getElementById("militopoPasswordError");
@@ -258,9 +283,8 @@
     }
 
     function showOrganizer(){
-        const gate = gateEl();
         const shell = participantShell();
-        if(gate) gate.style.display = "none";
+        closeGateSmooth();
         if(shell) shell.style.display = "none";
         setAppVisible(true);
         try{
@@ -303,10 +327,9 @@
     }
 
     function showParticipant(){
-        const gate = gateEl();
         const shell = participantShell();
         const content = document.getElementById("militopoParticipantOnlyContent");
-        if(gate) gate.style.display = "none";
+        closeGateSmooth();
         setAppVisible(false);
         if(shell) shell.style.display = "flex";
         try{ localStorage.setItem(ACCESS_MODE_KEY, "participante"); }catch(e){}

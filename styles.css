@@ -7972,6 +7972,18 @@ body {
   pointer-events: auto;
 }
 
+.startup-overlay.is-open .startup-minimal-shell {
+  animation: startupMenuShellIn .34s cubic-bezier(.2,.85,.25,1) both;
+}
+
+.startup-overlay.is-open .startup-minimal-card {
+  animation: startupMenuCardIn .34s cubic-bezier(.22,.8,.24,1) both;
+}
+
+.startup-overlay.is-open .startup-minimal-card:nth-of-type(2) {
+  animation-delay: .06s;
+}
+
 .startup-overlay.is-closing {
   opacity: 0;
   visibility: hidden;
@@ -7980,6 +7992,16 @@ body {
 
 @keyframes stepFluentIn {
   from { opacity: 0; transform: translateY(8px) scale(.998); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes startupMenuShellIn {
+  from { opacity: .01; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes startupMenuCardIn {
+  from { opacity: .01; transform: translateY(10px) scale(.992); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 

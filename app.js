@@ -4223,6 +4223,11 @@ function openMapModal() {
     function openStartupOverlaySmooth() {
         const overlay = document.getElementById("startupModeOverlay");
         if (!overlay) return;
+        const pendingClose = Number(overlay.dataset.closeTimer || 0);
+        if (pendingClose) {
+            clearTimeout(pendingClose);
+            overlay.dataset.closeTimer = "";
+        }
         overlay.classList.remove("is-closing");
         overlay.style.display = "flex";
         requestAnimationFrame(() => overlay.classList.add("is-open"));
@@ -4233,10 +4238,12 @@ function openMapModal() {
         if (!overlay) return;
         overlay.classList.remove("is-open");
         overlay.classList.add("is-closing");
-        window.setTimeout(() => {
+        const timerId = window.setTimeout(() => {
             overlay.style.display = "none";
             overlay.classList.remove("is-closing");
+            overlay.dataset.closeTimer = "";
         }, 260);
+        overlay.dataset.closeTimer = String(timerId);
     }
 
     function enterStartupMode(mode) {
@@ -5069,4 +5076,3 @@ document.addEventListener("DOMContentLoaded", setupTopoVisualEnhancements);
         });
     }
 })();
-
