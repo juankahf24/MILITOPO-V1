@@ -8045,6 +8045,11 @@ body.militopo-booting .container {
 }
 
 body.startup-transition-lock {
+  touch-action: none;
+}
+
+body.startup-transition-lock .container,
+body.startup-transition-lock #startupModeOverlay {
   pointer-events: none;
 }
 

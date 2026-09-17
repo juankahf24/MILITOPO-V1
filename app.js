@@ -4313,7 +4313,10 @@ function openMapModal() {
         overlay.classList.remove("is-closing");
         requestAnimationFrame(() => {
             overlay.classList.add("is-open");
-            restartStartupSequence(overlay);
+            preloadStartupAssets().finally(() => {
+                if (!overlay.classList.contains("is-open")) return;
+                restartStartupSequence(overlay);
+            });
         });
     }
 
@@ -4440,7 +4443,8 @@ function openMapModal() {
             // Prepara Topografía detrás del selector sin alterar la pantalla inicial.
             goToStep(getSavedTopografiaStep());
         };
-        preloadStartupAssets().finally(() => requestAnimationFrame(finalizeInitialMode));
+        requestAnimationFrame(finalizeInitialMode);
+        preloadStartupAssets();
 
         document.getElementById("startupTopoBtn")?.addEventListener("click", () => enterStartupMode("topografica"));
         document.getElementById("startupOriBtn")?.addEventListener("click", () => enterStartupMode("orientacion"));
