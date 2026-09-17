@@ -4222,6 +4222,8 @@ function openMapModal() {
 
     const STARTUP_OVERLAY_FADE_MS = 520;
     const STARTUP_CONTENT_REVEAL_DELAY_MS = 96;
+    const STARTUP_SEQUENCE_READY_MS = 2140;
+    const STARTUP_GUIDE_POST_REVEAL_DELAY_MS = 90;
     const PAGE_EXIT_FADE_MS = 340;
     const STARTUP_ASSET_SOURCES = [
         "icons/militopo-startup-premium-2048x3072.jpg",
@@ -4230,6 +4232,7 @@ function openMapModal() {
     ];
     let startupAssetsPreloadPromise = null;
     let startupTransitionKeyLockHandler = null;
+    let startupGuideOpenTimer = null;
 
     function prefersReducedMotion() {
         try {
@@ -4237,6 +4240,31 @@ function openMapModal() {
         } catch (e) {
             return false;
         }
+    }
+
+    function setInstructionsModalVisible(visible) {
+        const instrModal = document.getElementById("instructionsModal");
+        if (!instrModal) return;
+        instrModal.style.display = visible ? "flex" : "none";
+        instrModal.setAttribute("aria-hidden", visible ? "false" : "true");
+    }
+
+    function clearScheduledTopografiaGuideOpen() {
+        if (!startupGuideOpenTimer) return;
+        clearTimeout(startupGuideOpenTimer);
+        startupGuideOpenTimer = null;
+    }
+
+    function scheduleTopografiaGuideOpen() {
+        clearScheduledTopografiaGuideOpen();
+        const openDelay = prefersReducedMotion() ? 0 : STARTUP_GUIDE_POST_REVEAL_DELAY_MS;
+        startupGuideOpenTimer = window.setTimeout(() => {
+            startupGuideOpenTimer = null;
+            if (appMode !== "topografica" || document.body.classList.contains("startup-active")) return;
+            let hideGuide = false;
+            try { hideGuide = localStorage.getItem("militopo_topografia_guide_hidden") === "1"; } catch (e) {}
+            if (!hideGuide) setInstructionsModalVisible(true);
+        }, openDelay);
     }
 
     function resetAppContentEntrance() {
@@ -4247,19 +4275,54 @@ function openMapModal() {
             clearTimeout(pendingReveal);
             appContainer.dataset.enterTimer = "";
         }
+        const pendingFallback = Number(appContainer.dataset.enterFallbackTimer || 0);
+        if (pendingFallback) {
+            clearTimeout(pendingFallback);
+            appContainer.dataset.enterFallbackTimer = "";
+        }
+        appContainer.dataset.enterToken = String((Number(appContainer.dataset.enterToken || 0) + 1) || 1);
         appContainer.classList.remove("app-content-enter", "app-content-entered");
         return appContainer;
     }
 
-    function primeAppContentEntrance() {
+    function primeAppContentEntrance(onSettled) {
         const appContainer = resetAppContentEntrance();
-        if (!appContainer) return;
+        if (!appContainer) {
+            if (typeof onSettled === "function") onSettled();
+            return;
+        }
+        const enterToken = String((Number(appContainer.dataset.enterToken || 0) + 1) || 1);
+        appContainer.dataset.enterToken = enterToken;
+        let settled = false;
+        const settle = () => {
+            if (settled || appContainer.dataset.enterToken !== enterToken) return;
+            settled = true;
+            const pendingFallback = Number(appContainer.dataset.enterFallbackTimer || 0);
+            if (pendingFallback) {
+                clearTimeout(pendingFallback);
+                appContainer.dataset.enterFallbackTimer = "";
+            }
+            appContainer.removeEventListener("transitionend", handleTransitionEnd);
+            appContainer.classList.remove("app-content-enter");
+            if (typeof onSettled === "function") onSettled();
+        };
+        const handleTransitionEnd = (event) => {
+            if (event.target !== appContainer) return;
+            if (event.propertyName !== "opacity" && !String(event.propertyName || "").includes("transform")) return;
+            settle();
+        };
+        appContainer.addEventListener("transitionend", handleTransitionEnd);
         appContainer.classList.add("app-content-enter");
         void appContainer.offsetWidth;
         const revealDelay = prefersReducedMotion() ? 0 : STARTUP_CONTENT_REVEAL_DELAY_MS;
         const timerId = window.setTimeout(() => {
             appContainer.dataset.enterTimer = "";
-            requestAnimationFrame(() => appContainer.classList.add("app-content-entered"));
+            requestAnimationFrame(() => {
+                if (appContainer.dataset.enterToken !== enterToken) return;
+                appContainer.classList.add("app-content-entered");
+                const fallbackId = window.setTimeout(settle, prefersReducedMotion() ? 32 : STARTUP_OVERLAY_FADE_MS + 140);
+                appContainer.dataset.enterFallbackTimer = String(fallbackId);
+            });
         }, revealDelay);
         appContainer.dataset.enterTimer = String(timerId);
     }
@@ -4333,6 +4396,7 @@ function openMapModal() {
 
     function restartStartupSequence(overlay) {
         if (!overlay) return;
+        overlay.hidden = false;
         const readyTimer = Number(overlay.dataset.buttonsReadyTimer || 0);
         if (readyTimer) {
             clearTimeout(readyTimer);
@@ -4358,7 +4422,7 @@ function openMapModal() {
                     delete btn.dataset.startupPrevDisabled;
                 });
                 overlay.dataset.buttonsReadyTimer = "";
-            }, 2260);
+            }, prefersReducedMotion() ? 0 : STARTUP_SEQUENCE_READY_MS);
             overlay.dataset.buttonsReadyTimer = String(timerId);
         });
     }
@@ -4371,19 +4435,19 @@ function openMapModal() {
             clearTimeout(pendingClose);
             overlay.dataset.closeTimer = "";
         }
+        clearScheduledTopografiaGuideOpen();
         disableStartupTransitionFocusLock();
         document.body.classList.remove("startup-transition-lock", "page-exit");
         resetAppContentEntrance();
         setStartupVisualState(true);
+        overlay.hidden = false;
         overlay.setAttribute("aria-hidden", "false");
         if ("inert" in overlay) overlay.inert = false;
         overlay.classList.remove("is-closing");
         requestAnimationFrame(() => {
             overlay.classList.add("is-open");
-            preloadStartupAssets().finally(() => {
-                if (!overlay.classList.contains("is-open")) return;
-                restartStartupSequence(overlay);
-            });
+            restartStartupSequence(overlay);
+            preloadStartupAssets();
         });
     }
 
@@ -4419,14 +4483,27 @@ function openMapModal() {
         document.body.classList.add("startup-transition-lock");
         enableStartupTransitionFocusLock();
         overlay.classList.add("is-closing");
-        const timerId = window.setTimeout(() => {
+        const closeToken = String((Number(overlay.dataset.closeToken || 0) + 1) || 1);
+        overlay.dataset.closeToken = closeToken;
+        let closed = false;
+        const finalizeClose = () => {
+            if (closed || overlay.dataset.closeToken !== closeToken) return;
+            closed = true;
+            overlay.removeEventListener("transitionend", handleOverlayTransitionEnd);
             overlay.classList.remove("is-closing");
             overlay.dataset.closeTimer = "";
+            overlay.hidden = true;
             if (appContainer && "inert" in appContainer) appContainer.inert = document.body.classList.contains("startup-active");
             document.body.classList.remove("startup-transition-lock");
             disableStartupTransitionFocusLock();
             if (typeof onClosed === "function") onClosed();
-        }, STARTUP_OVERLAY_FADE_MS);
+        };
+        const handleOverlayTransitionEnd = (event) => {
+            if (event.target !== overlay || event.propertyName !== "opacity") return;
+            finalizeClose();
+        };
+        overlay.addEventListener("transitionend", handleOverlayTransitionEnd);
+        const timerId = window.setTimeout(finalizeClose, prefersReducedMotion() ? 32 : STARTUP_OVERLAY_FADE_MS + 120);
         overlay.dataset.closeTimer = String(timerId);
     }
 
@@ -4442,9 +4519,21 @@ function openMapModal() {
         }
         applyTopografiaNightTheme();
         appMode = "topografica";
-        primeAppContentEntrance();
+        let contentReady = false;
+        let overlayClosed = false;
+        const finalizeTopografiaEntry = () => {
+            if (!contentReady || !overlayClosed) return;
+            scheduleTopografiaGuideOpen();
+        };
+        primeAppContentEntrance(() => {
+            contentReady = true;
+            finalizeTopografiaEntry();
+        });
         setStartupVisualState(false);
-        closeStartupOverlaySmooth();
+        closeStartupOverlaySmooth(() => {
+            overlayClosed = true;
+            finalizeTopografiaEntry();
+        });
         setTopografiaUrlState();
         try {
             localStorage.setItem("milimoto_app_mode", appMode);
@@ -4453,12 +4542,6 @@ function openMapModal() {
 
         // Conserva el paso en el que estaba el usuario. Solo una sesión nueva empieza en el paso 1.
         showTopograficaMode(getSavedTopografiaStep());
-        setTimeout(() => {
-            let hideGuide = false;
-            try { hideGuide = localStorage.getItem("militopo_topografia_guide_hidden") === "1"; } catch (e) {}
-            const instrModal = document.getElementById("instructionsModal");
-            if (instrModal && !hideGuide) instrModal.style.display = "flex";
-        }, STARTUP_OVERLAY_FADE_MS);
     }
 
     function goToStep(step) {
@@ -4517,6 +4600,7 @@ function openMapModal() {
                 setStartupVisualState(false);
                 if (overlay) {
                     overlay.classList.remove("is-open", "is-closing", "startup-sequence-run", "startup-buttons-ready");
+                    overlay.hidden = true;
                     overlay.setAttribute("aria-hidden", "true");
                     if ("inert" in overlay) overlay.inert = true;
                 }
@@ -4885,8 +4969,8 @@ function openMapModal() {
               openInstrBtn = document.getElementById("openInstructionsHeaderBtn"),
               closeInstrBtn = document.getElementById("closeInstructionsBtn");
 
-        function showInstructions() { instrModal.style.display = "flex"; }
-        function hideInstructions() { instrModal.style.display = "none"; }
+        function showInstructions() { setInstructionsModalVisible(true); }
+        function hideInstructions() { setInstructionsModalVisible(false); }
 
         openInstrBtn?.addEventListener("click", showInstructions);
         closeInstrBtn?.addEventListener("click", hideInstructions);
