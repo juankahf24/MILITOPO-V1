@@ -312,8 +312,16 @@ let MODULOS = 8;
         document.getElementById("coordTypeConfig").value = currentCoordType;
         document.getElementById("infoEstructura").innerHTML = `${MODULOS} módulos × ${PUNTOS_POR_MODULO} puntos = ${MODULOS * PUNTOS_POR_MODULO} puntos totales`;
 
-        if (saved) puntosData = JSON.parse(saved);
-        else puntosData = generarEstructuraCompleta(currentCoordType);
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                puntosData = parsed && typeof parsed === "object"
+                    ? parsed
+                    : generarEstructuraCompleta(currentCoordType);
+            } catch (e) {
+                puntosData = generarEstructuraCompleta(currentCoordType);
+            }
+        } else puntosData = generarEstructuraCompleta(currentCoordType);
 
         renderizarPuntos();
         actualizarDashboard();
@@ -4212,6 +4220,25 @@ function openMapModal() {
         } catch (e) {}
     }
 
+    function openStartupOverlaySmooth() {
+        const overlay = document.getElementById("startupModeOverlay");
+        if (!overlay) return;
+        overlay.classList.remove("is-closing");
+        overlay.style.display = "flex";
+        requestAnimationFrame(() => overlay.classList.add("is-open"));
+    }
+
+    function closeStartupOverlaySmooth() {
+        const overlay = document.getElementById("startupModeOverlay");
+        if (!overlay) return;
+        overlay.classList.remove("is-open");
+        overlay.classList.add("is-closing");
+        window.setTimeout(() => {
+            overlay.style.display = "none";
+            overlay.classList.remove("is-closing");
+        }, 260);
+    }
+
     function enterStartupMode(mode) {
         if (mode === "orientacion") {
             window.location.href = "orientacion/";
@@ -4219,8 +4246,7 @@ function openMapModal() {
         }
         applyTopografiaNightTheme();
         appMode = "topografica";
-        const overlay = document.getElementById("startupModeOverlay");
-        if (overlay) overlay.style.display = "none";
+        closeStartupOverlaySmooth();
         setTopografiaUrlState();
         try {
             localStorage.setItem("milimoto_app_mode", appMode);
@@ -4238,8 +4264,13 @@ function openMapModal() {
     }
 
     function goToStep(step) {
+        step = Math.max(1, Math.min(3, Number(step) || 1));
         document.querySelectorAll(".step-content").forEach(c => c.classList.remove("active"));
-        document.getElementById(`step${step}`).classList.add("active");
+        const target = document.getElementById(`step${step}`);
+        if (!target) return;
+        target.classList.add("active");
+        target.classList.remove("step-fluent-enter");
+        requestAnimationFrame(() => target.classList.add("step-fluent-enter"));
         document.querySelectorAll(".step").forEach((s, idx) => {
             s.classList.remove("active");
             if (idx + 1 === step) s.classList.add("active");
@@ -4278,7 +4309,10 @@ function openMapModal() {
         // La URL diferencia claramente el selector general de la rama Topografía:
         //   /MILITOPO/                  -> selector inicial
         //   /MILITOPO/?modo=topografia -> Topografía y recarga estable dentro de la rama
-        if (overlay) overlay.style.display = openTopografia ? "none" : "flex";
+        if (overlay) {
+            if (openTopografia) closeStartupOverlaySmooth();
+            else openStartupOverlaySmooth();
+        }
         if (openTopografia) {
             appMode = "topografica";
             showTopograficaMode(getSavedTopografiaStep());
@@ -4297,12 +4331,9 @@ function openMapModal() {
             if (appMode !== "topografica") changeModeWithPrompt("topografica");
         });
         document.getElementById("headerOriTab")?.addEventListener("click", () => {
-            const overlay = document.getElementById("startupModeOverlay");
-            if (overlay) {
-                overlay.style.display = "flex";
-                const notice = document.getElementById("startupPendingNotice");
-                if (notice) notice.hidden = true;
-            }
+            openStartupOverlaySmooth();
+            const notice = document.getElementById("startupPendingNotice");
+            if (notice) notice.hidden = true;
         });
 
         document.querySelectorAll("input, textarea, select").forEach(el => {
@@ -5038,5 +5069,4 @@ document.addEventListener("DOMContentLoaded", setupTopoVisualEnhancements);
         });
     }
 })();
-
 

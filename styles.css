@@ -7922,3 +7922,67 @@ body {
     font-size: clamp(2rem, 8.6vw, 3.5rem) !important;
   }
 }
+
+/* ===== Fluidez UX v1 ===== */
+.btn,
+.layer-btn,
+.points-action-tab,
+.step,
+.branch-tab,
+.topo-atak-import-btn,
+.topo-atak-info-btn {
+  will-change: transform, box-shadow, filter;
+  transition: transform .14s ease, box-shadow .18s ease, filter .18s ease, background-color .18s ease !important;
+}
+
+.btn:active,
+.layer-btn:active,
+.points-action-tab:active,
+.step:active,
+.branch-tab:active,
+.topo-atak-import-btn:active,
+.topo-atak-info-btn:active {
+  transform: translateY(1px) scale(.992) !important;
+}
+
+@media (hover: none) {
+  .btn:hover,
+  .layer-btn:hover,
+  .points-action-tab:hover,
+  .step:hover,
+  .branch-tab:hover,
+  .topo-atak-import-btn:hover,
+  .topo-atak-info-btn:hover {
+    transform: none !important;
+    filter: none !important;
+    box-shadow: inherit !important;
+  }
+}
+
+.startup-overlay {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .25s ease, visibility .25s ease;
+}
+
+.startup-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.startup-overlay.is-closing {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@keyframes stepFluentIn {
+  from { opacity: 0; transform: translateY(8px) scale(.998); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.step-content.step-fluent-enter {
+  animation: stepFluentIn .24s ease;
+}
