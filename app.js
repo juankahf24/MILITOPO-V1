@@ -4220,6 +4220,38 @@ function openMapModal() {
         } catch (e) {}
     }
 
+    function restartStartupSequence(overlay) {
+        if (!overlay) return;
+        const readyTimer = Number(overlay.dataset.buttonsReadyTimer || 0);
+        if (readyTimer) {
+            clearTimeout(readyTimer);
+            overlay.dataset.buttonsReadyTimer = "";
+        }
+        overlay.classList.remove("startup-buttons-ready");
+        overlay.querySelectorAll(".startup-seq-btn").forEach(btn => {
+            if (btn.dataset.startupPrevDisabled === "1" || btn.dataset.startupPrevDisabled === "0") {
+                btn.disabled = btn.dataset.startupPrevDisabled === "1";
+            }
+            btn.dataset.startupPrevDisabled = btn.disabled ? "1" : "0";
+            btn.disabled = true;
+        });
+        overlay.classList.remove("startup-sequence-run");
+        void overlay.offsetWidth;
+        requestAnimationFrame(() => {
+            if (!overlay.classList.contains("is-open")) return;
+            overlay.classList.add("startup-sequence-run");
+            const timerId = window.setTimeout(() => {
+                overlay.classList.add("startup-buttons-ready");
+                overlay.querySelectorAll(".startup-seq-btn").forEach(btn => {
+                    btn.disabled = btn.dataset.startupPrevDisabled === "1";
+                    delete btn.dataset.startupPrevDisabled;
+                });
+                overlay.dataset.buttonsReadyTimer = "";
+            }, 2260);
+            overlay.dataset.buttonsReadyTimer = String(timerId);
+        });
+    }
+
     function openStartupOverlaySmooth() {
         const overlay = document.getElementById("startupModeOverlay");
         if (!overlay) return;
@@ -4230,13 +4262,29 @@ function openMapModal() {
         }
         overlay.classList.remove("is-closing");
         overlay.style.display = "flex";
-        requestAnimationFrame(() => overlay.classList.add("is-open"));
+        requestAnimationFrame(() => {
+            overlay.classList.add("is-open");
+            restartStartupSequence(overlay);
+        });
     }
 
     function closeStartupOverlaySmooth() {
         const overlay = document.getElementById("startupModeOverlay");
         if (!overlay) return;
+        const readyTimer = Number(overlay.dataset.buttonsReadyTimer || 0);
+        if (readyTimer) {
+            clearTimeout(readyTimer);
+            overlay.dataset.buttonsReadyTimer = "";
+        }
         overlay.classList.remove("is-open");
+        overlay.classList.remove("startup-sequence-run");
+        overlay.classList.remove("startup-buttons-ready");
+        overlay.querySelectorAll(".startup-seq-btn").forEach(btn => {
+            if (btn.dataset.startupPrevDisabled === "1" || btn.dataset.startupPrevDisabled === "0") {
+                btn.disabled = btn.dataset.startupPrevDisabled === "1";
+                delete btn.dataset.startupPrevDisabled;
+            }
+        });
         overlay.classList.add("is-closing");
         const timerId = window.setTimeout(() => {
             overlay.style.display = "none";
