@@ -2568,6 +2568,111 @@ const manualRouteEditorState={
     availableControlIds:[]
 };
 let manualRouteEditorLastFocus=null;
+let manualRouteEditorMap=null;
+let manualRouteEditorLayers={};
+let manualRouteEditorCurrentLayer=null;
+let manualRouteEditorMarkersLayer=null;
+let manualRouteEditorPathLayer=null;
+let manualRouteEditorLayerName="";
+
+function manualRouteLatLng(pointId){
+    const point=state.points?.[pointId];
+    const lat=Number(point?.lat),lon=Number(point?.lon);
+    return Number.isFinite(lat)&&Number.isFinite(lon)?[lat,lon]:null;
+}
+
+function buildManualRouteBaseLayers(){
+    return{
+        mapant:createMapantWmtsLayer({maxZoom:24,maxNativeZoom:19}),
+        ign:L.tileLayer("https://www.ign.es/wmts/mapa-raster?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=MTN&STYLE=default&TILEMATRIXSET=GoogleMapsCompatible&FORMAT=image/jpeg&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}",{attribution:"© Instituto Geográfico Nacional",maxNativeZoom:18,maxZoom:24,keepBuffer:6,updateWhenZooming:true}),
+        pnoa:L.tileLayer("https://www.ign.es/wmts/pnoa-ma?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=OI.OrthoimageCoverage&STYLE=default&TILEMATRIXSET=GoogleMapsCompatible&FORMAT=image/jpeg&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}",{attribution:"© PNOA Máxima Actualidad · IGN",maxNativeZoom:19,maxZoom:22,keepBuffer:8,updateWhenIdle:false,updateWhenZooming:true,crossOrigin:true,className:"pnoa-overzoom-tile"})
+    };
+}
+
+function switchManualRouteEditorLayer(name){
+    const m=manualRouteEditorMap;
+    if(!m||!manualRouteEditorLayers[name])return;
+    if(manualRouteEditorCurrentLayer)m.removeLayer(manualRouteEditorCurrentLayer);
+    m.setMaxZoom(name==="pnoa"?22:24);
+    if(name==="pnoa"&&m.getZoom()>22)m.setZoom(22,{animate:false});
+    manualRouteEditorCurrentLayer=manualRouteEditorLayers[name].addTo(m);
+    manualRouteEditorLayerName=name;
+    document.querySelectorAll("[data-manual-map-layer]").forEach(btn=>btn.classList.toggle("active",btn.dataset.manualMapLayer===name));
+    manualRouteEditorMarkersLayer?.bringToFront?.();
+    manualRouteEditorPathLayer?.bringToFront?.();
+    setTimeout(()=>m.invalidateSize(),40);
+}
+
+function ensureManualRouteEditorMap(){
+    const el=document.getElementById("manualRouteEditorMap");
+    if(!el||typeof L==="undefined")return null;
+    if(manualRouteEditorMap)return manualRouteEditorMap;
+    manualRouteEditorMap=L.map(el,{zoomControl:true,maxZoom:24,zoomSnap:.25,zoomDelta:.5,wheelPxPerZoomLevel:34,doubleClickZoom:true,boxZoom:true,touchZoom:true,bounceAtZoomLimits:false});
+    manualRouteEditorLayers=buildManualRouteBaseLayers();
+    const preferred=["mapant","ign","pnoa"].includes(state.selectedMapLayer)?state.selectedMapLayer:"mapant";
+    manualRouteEditorCurrentLayer=manualRouteEditorLayers[preferred].addTo(manualRouteEditorMap);
+    manualRouteEditorLayerName=preferred;
+    manualRouteEditorPathLayer=L.layerGroup().addTo(manualRouteEditorMap);
+    manualRouteEditorMarkersLayer=L.layerGroup().addTo(manualRouteEditorMap);
+    document.querySelectorAll("[data-manual-map-layer]").forEach(btn=>{
+        btn.classList.toggle("active",btn.dataset.manualMapLayer===preferred);
+        btn.addEventListener("click",()=>switchManualRouteEditorLayer(btn.dataset.manualMapLayer));
+    });
+    const allLatLngs=Object.values(state.points||{}).map(point=>manualRouteLatLng(point.id)).filter(Boolean);
+    if(allLatLngs.length>1)manualRouteEditorMap.fitBounds(L.latLngBounds(allLatLngs).pad(.12),{padding:[24,24],maxZoom:18,animate:false});
+    else if(allLatLngs.length===1)manualRouteEditorMap.setView(allLatLngs[0],17,{animate:false});
+    else manualRouteEditorMap.setView([40.4168,-3.7038],7,{animate:false});
+    requestAnimationFrame(()=>manualRouteEditorMap?.invalidateSize());
+    return manualRouteEditorMap;
+}
+
+function renderManualRouteEditorMap(){
+    const m=ensureManualRouteEditorMap();
+    if(!m||!manualRouteEditorMarkersLayer||!manualRouteEditorPathLayer)return;
+    manualRouteEditorMarkersLayer.clearLayers();
+    manualRouteEditorPathLayer.clearLayers();
+    const selected=Array.isArray(manualRouteEditorState.selectedControlIds)?manualRouteEditorState.selectedControlIds:[];
+    const order=new Map(selected.map((id,index)=>[String(id),index+1]));
+    Object.values(state.points||{}).forEach(point=>{
+        const ll=manualRouteLatLng(point.id);if(!ll)return;
+        const number=order.get(String(point.id));
+        const icon=L.divIcon({html:`<div class="${iconClassForType(point.type)}${number?" manual-route-map-selected":""}">${point.type==="BALIZA"?(number||String(point.id).replace("B","")):""}</div>`,className:"",iconSize:[24,24],iconAnchor:[12,12]});
+        const marker=L.marker(ll,{icon,keyboard:true,zIndexOffset:number?500:0})
+            .bindTooltip(number?`${point.id} · ${number}ª`:String(point.id),{permanent:true,direction:"right",className:"marker-label"})
+            .addTo(manualRouteEditorMarkersLayer);
+        if(point.type==="BALIZA"&&manualRouteEditorState.availableControlIds.includes(point.id)){
+            marker.on("click",()=>{
+                const target=Math.max(1,Number(manualRouteEditorState.targetCount)||1);
+                if(manualRouteEditorState.selectedControlIds.includes(point.id)||manualRouteEditorState.selectedControlIds.length>=target)return;
+                manualRouteEditorState.selectedControlIds.push(point.id);
+                renderManualRouteEditor();
+            });
+        }
+    });
+    const sequence=["START",...selected];
+    const target=Math.max(1,Number(manualRouteEditorState.targetCount)||1);
+    if(selected.length===target)sequence.push("FINISH");
+    const latlngs=sequence.map(manualRouteLatLng).filter(Boolean);
+    if(latlngs.length>1)L.polyline(latlngs,{color:"#f0c16a",weight:5,opacity:.95,lineJoin:"round",lineCap:"round"}).addTo(manualRouteEditorPathLayer);
+    const hint=document.getElementById("manualRouteEditorMapHint");
+    if(hint){
+        const pretty=["SALIDA",...selected];
+        if(selected.length===target)pretty.push("LLEGADA");
+        hint.textContent=pretty.join(" → ")+(selected.length<target?" → …":" ");
+    }
+    document.querySelectorAll("[data-manual-map-layer]").forEach(btn=>btn.classList.toggle("active",btn.dataset.manualMapLayer===manualRouteEditorLayerName));
+    requestAnimationFrame(()=>m.invalidateSize());
+}
+
+function destroyManualRouteEditorMap(){
+    if(manualRouteEditorMap){try{manualRouteEditorMap.remove()}catch(_){}}
+    manualRouteEditorMap=null;
+    manualRouteEditorLayers={};
+    manualRouteEditorCurrentLayer=null;
+    manualRouteEditorMarkersLayer=null;
+    manualRouteEditorPathLayer=null;
+    manualRouteEditorLayerName="";
+}
 
 function setManualRouteBackgroundHidden(hidden){
     const targets=[document.querySelector(".app")].filter(Boolean);
@@ -2662,6 +2767,21 @@ function ensureManualRouteEditorModal(){
                 <button type="button" class="btn secondary manual-route-close-btn" id="manualRouteCloseBtn">Cerrar</button>
             </div>
             <div id="manualRouteEditorBody"></div>
+            <div class="manual-route-map-section">
+                <div class="manual-route-map-head">
+                    <div>
+                        <div class="manual-route-subtitle">Vista del recorrido</div>
+                        <div id="manualRouteEditorMapHint" class="manual-route-map-hint">SALIDA → …</div>
+                    </div>
+                    <div class="manual-route-map-layers" aria-label="Fondo del mapa">
+                        <button type="button" class="layer-btn" data-manual-map-layer="mapant">🧭 MAPANT</button>
+                        <button type="button" class="layer-btn" data-manual-map-layer="ign">🗺️ IGN</button>
+                        <button type="button" class="layer-btn" data-manual-map-layer="pnoa">🛰️ AÉREO</button>
+                    </div>
+                </div>
+                <div id="manualRouteEditorMap" class="manual-route-map" aria-label="Mapa del recorrido manual"></div>
+                <div class="manual-route-map-note">Todas las balizas permanecen visibles. Cada baliza elegida se une en orden desde SALIDA; al completar la secuencia se añade LLEGADA.</div>
+            </div>
         </div>`;
     document.body.appendChild(modal);
     modal.addEventListener("click",ev=>{if(ev.target===modal)closeManualRouteEditor();});
@@ -2753,6 +2873,7 @@ function renderManualRouteEditor(){
         const ok=applyRouteControlsToLinkedParticipants(manualRouteEditorState.routeIndex,manualRouteEditorState.selectedControlIds);
         if(ok)closeManualRouteEditor();
     });
+    requestAnimationFrame(renderManualRouteEditorMap);
 }
 
 function openManualRouteEditor(routeIndex){
@@ -2784,6 +2905,7 @@ function openManualRouteEditor(routeIndex){
 function closeManualRouteEditor(){
     const modal=document.getElementById("manualRouteEditorModal");
     if(modal)modal.style.display="none";
+    destroyManualRouteEditorMap();
     document.body.classList.remove("manual-route-modal-open");
     setManualRouteBackgroundHidden(false);
     const restore=manualRouteEditorLastFocus;
@@ -3163,7 +3285,9 @@ function participantDisplay(pid,routeId=""){
 
 /* MILITOPO LIVE · contexto seguro para el módulo de seguimiento en vivo */
 window.MILITOPO_LIVE_GET_ORGANIZER_CONTEXT=function(){
-    const routes=(typeof activeRoutes==="function"?activeRoutes():(state.routes||[])).map(route=>{
+    const allRoutes=Array.isArray(state.routes)?state.routes:[];
+    const activeRouteList=(typeof activeRoutes==="function"?activeRoutes():allRoutes);
+    const routes=activeRouteList.map(route=>{
         const participantId=String(route?.participantId||"");
         const flow=(typeof getStartFlowStatus==="function"?getStartFlowStatus(route):{})||{};
         const imported=(state.importedResults||[]).find(result=>String(result?.participantId||"")===participantId&&!isResultForSkippedRoute(result))||null;
@@ -3188,9 +3312,19 @@ window.MILITOPO_LIVE_GET_ORGANIZER_CONTEXT=function(){
         eventId:String(state.eventId||""),
         eventName:String(state.eventName||"ENTRENAMIENTO ORIENTACIÓN"),
         routes,
+        allParticipantIds:allRoutes.map(route=>String(route?.participantId||"")).filter(Boolean),
+        discardedParticipantIds:allRoutes.filter(route=>typeof isRouteSkipped==="function"&&isRouteSkipped(route)).map(route=>String(route?.participantId||"")).filter(Boolean),
         currentStep:Number(currentAppStep||1)
     };
 };
+
+function refreshLiveOrganizerContext(){
+    try{
+        if(typeof window.MILITOPO_LIVE_REFRESH_ORGANIZER_CONTEXT==="function"){
+            queueMicrotask(()=>{try{window.MILITOPO_LIVE_REFRESH_ORGANIZER_CONTEXT()}catch(_){}});
+        }
+    }catch(_){ }
+}
 
 function setParticipantName(pid,name){
     if(!pid)return;
@@ -3202,6 +3336,7 @@ function setParticipantName(pid,name){
     saveState();
     updateOrganizerParticipantSelects({keepQr:true});
     renderResultsControl();
+    refreshLiveOrganizerContext();
 }
 
 function createParticipantNameField(id,labelText,onSave){
@@ -3289,6 +3424,7 @@ function markStartFlowStatus(pid,field){
     saveState();
     if(typeof updateOrganizerParticipantSelects==="function")updateOrganizerParticipantSelects({keepQr:true});
     renderStartFlowStatusPanel();
+    refreshLiveOrganizerContext();
     return current;
 }
 
@@ -3530,8 +3666,8 @@ function setRouteSkipped(pid,skipped=true){
     const key=routeAssignmentKey(route);
     if(skipped){
         store[key]={participantId:route.participantId,routeId:route.routeId,discardedAt:new Date().toISOString(),reason:"organizer"};
-        state.importedResults=(state.importedResults||[]).filter(r=>String(r.participantId||"")!==String(route.participantId||""));
-        if(state.participantLogs)delete state.participantLogs[route.participantId];
+        // Descartar solo cambia la participación activa. El resultado, track y log
+        // se conservan íntegros para poder reactivar o auditar el recorrido.
     }else{
         delete store[key];
     }
@@ -3539,6 +3675,7 @@ function setRouteSkipped(pid,skipped=true){
     updateOrganizerParticipantSelects();
     renderResultsControl();
     renderImportedResults();
+    refreshLiveOrganizerContext();
     return true;
 }
 
@@ -4363,6 +4500,7 @@ window.MILITOPO_LIVE_IMPORT_RESULT=function(raw,meta={}){
             renderResultsControl();
             if(typeof updateOrganizerParticipantSelects==="function")updateOrganizerParticipantSelects({keepQr:true});
             renderStartFlowStatusPanel();
+            refreshLiveOrganizerContext();
             if(typeof toast==="function")toast(`Resultado recibido en vivo: ${parsed.participantId}`);
         }
 
@@ -6201,8 +6339,7 @@ self.addEventListener("activate", event => {
 });
 
 async function cached(request) {
-  return (await caches.match(request, { ignoreSearch: false })) ||
-         (await caches.match(request, { ignoreSearch: true }));
+  return await caches.match(request, { ignoreSearch: false });
 }
 
 self.addEventListener("fetch", event => {
@@ -6540,7 +6677,7 @@ async function loadScriptOnce(url,globalCheck){
 
 async function ensurePlanAssets(){
     if(window.MILITOPO_PLAN_ASSETS)return window.MILITOPO_PLAN_ASSETS;
-    await loadScriptOnce(new URL("js/config/plan-assets.js?v=v73-integridad-offline-20260918",location.href).href,()=>window.MILITOPO_PLAN_ASSETS);
+    await loadScriptOnce(new URL("js/config/plan-assets.js?v=v74-mapas-live-manual-20260918",location.href).href,()=>window.MILITOPO_PLAN_ASSETS);
     if(!window.MILITOPO_PLAN_ASSETS)throw new Error("Recursos de plano no disponibles");
     return window.MILITOPO_PLAN_ASSETS;
 }
@@ -9341,30 +9478,47 @@ function cloneStateForSave(){
     return copy;
 }
 
+function cloneStateForCompactSave(){
+    const copy=cloneStateForSave();
+    copy.importedResults=(copy.importedResults||[]).map(result=>{
+        const next={...result};
+        const track=Array.isArray(next.track)&&next.track.length?next.track:(Array.isArray(next.gpsTrack)?next.gpsTrack:[]);
+        if(track.length){
+            next.trackPointCount=Math.max(Number(next.trackPointCount)||0,track.length);
+            next.trackStoredExternally=true;
+        }
+        delete next.track;
+        delete next.gpsTrack;
+        return next;
+    });
+    return copy;
+}
+
+function safeStorageWrite(storage,key,value){
+    try{storage.setItem(key,value);return true}catch(_){return false}
+}
+
 function saveState(){
     try{
         currentAppStep=normalizeAppStep(currentAppStep||1);
         saveCurrentStepNow();
-
-        const payload={
-            savedAt:new Date().toISOString(),
-            currentStep:currentAppStep,
-            selectedIofPointId:selectedIofPointId||"START",
-            state:cloneStateForSave()
-        };
-
-        const raw=JSON.stringify(payload);
-        try{localStorage.setItem(STORAGE_KEY_MAIN,raw)}catch(e){}
-        try{localStorage.setItem(STORAGE_KEY_BACKUP,raw)}catch(e){}
-        try{sessionStorage.setItem(STORAGE_KEY_SESSION,raw)}catch(e){}
-        try{localStorage.setItem(STORAGE_KEY_LEGACY,JSON.stringify(payload.state))}catch(e){}
-        try{sessionStorage.setItem(STORAGE_KEY_LEGACY,JSON.stringify(payload.state))}catch(e){}
-        try{window.name=WINDOW_NAME_PREFIX+raw}catch(e){}
-        try{localStorage.setItem("militopo_orientacion_restore_probe_v2",JSON.stringify({
-            savedAt:payload.savedAt,
-            eventId:state.eventId,
-            currentStep:currentAppStep
-        }))}catch(e){}
+        const savedAt=new Date().toISOString();
+        const payload={savedAt,currentStep:currentAppStep,selectedIofPointId:selectedIofPointId||"START",state:cloneStateForSave()};
+        const compactPayload={savedAt,currentStep:currentAppStep,selectedIofPointId:selectedIofPointId||"START",state:cloneStateForCompactSave(),compact:true};
+        const raw=JSON.stringify(payload),compactRaw=JSON.stringify(compactPayload);
+        const mainOk=safeStorageWrite(localStorage,STORAGE_KEY_MAIN,raw);
+        const backupOk=safeStorageWrite(localStorage,STORAGE_KEY_BACKUP,compactRaw);
+        const sessionOk=safeStorageWrite(sessionStorage,STORAGE_KEY_SESSION,raw)||safeStorageWrite(sessionStorage,STORAGE_KEY_SESSION,compactRaw);
+        // El legado y window.name son copias ligeras: así un track grande no puede
+        // dejar sin espacio los datos de resultados, estados y salidas.
+        safeStorageWrite(localStorage,STORAGE_KEY_LEGACY,JSON.stringify(compactPayload.state));
+        safeStorageWrite(sessionStorage,STORAGE_KEY_LEGACY,JSON.stringify(compactPayload.state));
+        try{window.name=WINDOW_NAME_PREFIX+compactRaw}catch(e){}
+        safeStorageWrite(localStorage,"militopo_orientacion_restore_probe_v2",JSON.stringify({savedAt,eventId:state.eventId,currentStep:currentAppStep}));
+        if(!(mainOk||backupOk||sessionOk)){
+            setRestoreStatus("⚠️ El navegador no ha podido guardar el estado local. Libera espacio antes de continuar.","err");
+            return false;
+        }
         return true;
     }catch(e){
         console.warn("Autoguardado falló:",e);
@@ -9431,10 +9585,15 @@ function loadState(){
     const windowBackup=readWindowNameOrganizerBackup();
     const legacy=safeReadJsonStorage(STORAGE_KEY_LEGACY);
 
-    const payload=(main.value&&main.value.state)?main.value:
-                  (backup.value&&backup.value.state)?backup.value:
-                  (session.value&&session.value.state)?session.value:
-                  (windowBackup.value&&windowBackup.value.state)?windowBackup.value:null;
+    const candidates=[
+        {reason:"main",value:main.value},
+        {reason:"backup",value:backup.value},
+        {reason:"session",value:session.value},
+        {reason:"window",value:windowBackup.value}
+    ].filter(item=>item.value&&item.value.state);
+    candidates.sort((a,b)=>(Date.parse(String(b.value.savedAt||""))||0)-(Date.parse(String(a.value.savedAt||""))||0));
+    const chosen=candidates[0]||null;
+    const payload=chosen?.value||null;
 
     if(payload){
         Object.assign(state,payload.state);
@@ -9444,7 +9603,7 @@ function loadState(){
         if(!state.participantNames)state.participantNames={};
         if(!state.skippedRoutes)state.skippedRoutes={};
         if(state.pdfPlanCenterManual&&(!Number.isFinite(Number(state.pdfPlanCenterManual.lat))||!Number.isFinite(Number(state.pdfPlanCenterManual.lon))))state.pdfPlanCenterManual=null;
-        return {restored:true,step:currentAppStep,reason:main.value===payload?"main":backup.value===payload?"backup":session.value===payload?"session":"window"};
+        return {restored:true,step:currentAppStep,reason:chosen?.reason||"unknown"};
     }
 
     if(legacy.value){
