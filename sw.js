@@ -1,91 +1,17 @@
-/* MILITOPO PWA · v50 · arranque oscuro y shell en caché */
-const CACHE_NAME = "militopo-pwa-v50-startup-dark";
-const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./styles.css?v=inicio-premium-v49",
-  "./app.js",
-  "./app.js?v=inicio-logo-full-v46",
-  "./manifest.webmanifest",
-  "./icons/militopo-192.png",
-  "./icons/militopo-512.png",
-  "./icons/militopo-startup-1536.png",
-  "./icons/militopo-startup-premium-2048x3072.jpg"
+/* MILITOPO PWA · v73-integridad-offline-20260918 · shell estable y librerías críticas en caché */
+const CACHE_NAME="militopo-pwa-v73-integridad-offline-20260918";
+const RUNTIME_CACHE="militopo-pwa-runtime-v73-integridad-offline-20260918";
+const APP_SHELL=["./","./index.html","./styles.css","./styles.css?v=v73-integridad-offline-20260918","./app.js","./app.js?v=v73-integridad-offline-20260918","./manifest.webmanifest","./icons/militopo-192.png","./icons/militopo-512.png","./icons/militopo-startup-1536.png","./icons/militopo-startup-premium-2048x3072.jpg"];
+const REMOTE_ASSETS=[
+"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css","https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png","https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png","https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+"https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js","https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js","https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js",
+"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js","https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js","https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js","https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 ];
-
-self.addEventListener("install", event => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL))
-  );
-});
-
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    (async () => {
-      if (self.registration.navigationPreload) {
-        try { await self.registration.navigationPreload.enable(); } catch (e) {}
-      }
-      const keys = await caches.keys();
-      await Promise.all(
-        keys.filter(key => key.startsWith("militopo-pwa-") && key !== CACHE_NAME)
-            .map(key => caches.delete(key))
-      );
-      await self.clients.claim();
-    })()
-  );
-});
-
-async function cachedResponse(request) {
-  return (await caches.match(request, { ignoreSearch: false })) ||
-         (await caches.match(request, { ignoreSearch: true }));
-}
-
-self.addEventListener("fetch", event => {
-  const request = event.request;
-  if (request.method !== "GET") return;
-  const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
-  const isNavigation = request.mode === "navigate";
-  const isShellAsset = isNavigation || /\/(?:index\.html|styles\.css|app\.js|manifest\.webmanifest)$/.test(url.pathname);
-
-  event.respondWith(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      const cached = await cachedResponse(request);
-      const networkFetch = async () => {
-        try {
-          const preload = isNavigation ? await event.preloadResponse : null;
-          const response = preload || await fetch(request);
-          if (response && response.ok && response.status !== 206) {
-            cache.put(request, response.clone()).catch(() => {});
-          }
-          return response;
-        } catch (error) {
-          return null;
-        }
-      };
-
-      if (isShellAsset && cached) {
-        event.waitUntil(networkFetch());
-        return cached;
-      }
-
-      const response = await networkFetch();
-      if (response) return response;
-      if (cached) return cached;
-
-      if (isNavigation) {
-        return (await cachedResponse(new Request("./index.html"))) ||
-               (await cachedResponse(new Request("./"))) ||
-               new Response(
-                 "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>MILITOPO offline</title><body style='margin:0;font-family:monospace;background:#0a0e0a;color:#f5e6c8;padding:24px'><h1>MILITOPO sin cobertura</h1><p>Abre la app una vez con conexión para dejar guardada la pantalla de inicio.</p></body>",
-                 { headers: { "Content-Type": "text/html;charset=utf-8" } }
-               );
-      }
-
-      return new Response("", { status: 503, statusText: "Offline" });
-    })()
-  );
-});
+const TRUSTED_RUNTIME_ORIGINS=new Set(["https://unpkg.com","https://cdnjs.cloudflare.com","https://cdn.sheetjs.com","https://cdn.jsdelivr.net","https://tile.openstreetmap.org","https://www.ign.es"]);
+async function cacheRemote(cache,url){try{const r=await fetch(new Request(url,{mode:"no-cors",cache:"reload"}));if(r)await cache.put(url,r.clone())}catch(_){}}
+async function trimCache(name,max=450){try{const c=await caches.open(name),keys=await c.keys();await Promise.all(keys.slice(0,Math.max(0,keys.length-max)).map(k=>c.delete(k)))}catch(_){}}
+self.addEventListener("install",event=>{self.skipWaiting();event.waitUntil((async()=>{const c=await caches.open(CACHE_NAME);await Promise.allSettled(APP_SHELL.map(u=>c.add(new Request(u,{cache:"reload"}))));await Promise.allSettled(REMOTE_ASSETS.map(u=>cacheRemote(c,u)))})())});
+self.addEventListener("activate",event=>event.waitUntil((async()=>{if(self.registration.navigationPreload)try{await self.registration.navigationPreload.enable()}catch(_){}const keys=await caches.keys();await Promise.all(keys.filter(k=>(k.startsWith("militopo-pwa-")||k.startsWith("militopo-pwa-runtime-"))&&k!==CACHE_NAME&&k!==RUNTIME_CACHE).map(k=>caches.delete(k)));await self.clients.claim()})()));
+async function cachedResponse(req){return(await caches.match(req,{ignoreSearch:false}))||(await caches.match(req,{ignoreSearch:true}))}
+self.addEventListener("fetch",event=>{const req=event.request;if(req.method!=="GET")return;const url=new URL(req.url),same=url.origin===self.location.origin,isRemote=TRUSTED_RUNTIME_ORIGINS.has(url.origin);if(!same&&!isRemote)return;event.respondWith((async()=>{const cache=await caches.open(same?CACHE_NAME:RUNTIME_CACHE),cached=await cachedResponse(req);const isNav=same&&req.mode==="navigate";if(cached&&!isNav){event.waitUntil(fetch(req).then(r=>{if(r&&r.status!==206)cache.put(req,r.clone()).catch(()=>{})}).catch(()=>{}));return cached}try{const preload=isNav?await event.preloadResponse:null,r=preload||await fetch(req);if(r&&r.status!==206){cache.put(req,r.clone()).catch(()=>{});if(!same)event.waitUntil(trimCache(RUNTIME_CACHE))}return r}catch(_){if(cached)return cached;if(isNav)return(await cachedResponse(new Request("./index.html")))||(await cachedResponse(new Request("./")))||new Response("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>MILITOPO offline</title><body style='background:#0a0e0a;color:#f5e6c8;font-family:monospace;padding:24px'><h1>MILITOPO sin cobertura</h1><p>La aplicación está offline. Los datos locales se conservan; los mapas no visitados previamente pueden no estar disponibles.</p></body>",{headers:{"Content-Type":"text/html;charset=utf-8"}});return new Response("",{status:503,statusText:"Offline"})}})())});

@@ -18,36 +18,69 @@ let MODULOS = 8;
     let userLocationMarker = null;
     let userLocationCircle = null;
 
-    function esUTMValido(coord) {
-        if (!coord || typeof coord !== 'string') return false;
-        const partes = coord.trim().split(/\s+/);
-        if (partes.length !== 3) return false;
-        const zona = partes[0];
-        const este = partes[1];
-        const norte = partes[2];
-        const zonaRegex = /^[0-9]{1,2}[A-Z]$/i;
-        if (!zonaRegex.test(zona)) return false;
-        if (!/^[0-9]{6}$/.test(este)) return false;
-        if (!/^[0-9]{7}$/.test(norte)) return false;
-        return true;
+    const MILITOPO_UTM_BANDS = "CDEFGHJKLMNPQRSTUVWX";
+    const MILITOPO_MGRS_ROWS = "ABCDEFGHJKLMNPQRSTUV";
+    const MILITOPO_MGRS_COL_SETS = ["ABCDEFGH", "JKLMNPQR", "STUVWXYZ", "ABCDEFGH", "JKLMNPQR", "STUVWXYZ"];
+    const MILITOPO_MGRS_MIN_NORTHING = {C:1100000,D:2000000,E:2800000,F:3700000,G:4600000,H:5500000,J:6400000,K:7300000,L:8200000,M:9100000,N:0,P:800000,Q:1700000,R:2600000,S:3500000,T:4400000,U:5300000,V:6200000,W:7000000,X:7900000};
+
+    function utmBandForLatitude(lat) {
+        lat = Number(lat);
+        if (!Number.isFinite(lat) || lat < -80 || lat > 84) return null;
+        if (lat === 84) return "X";
+        const idx = Math.max(0, Math.min(MILITOPO_UTM_BANDS.length - 1, Math.floor((lat + 80) / 8)));
+        return MILITOPO_UTM_BANDS[idx];
     }
 
-    function esMGRSValido(coord) {
-        if (!coord || typeof coord !== 'string') return false;
-        const partes = coord.trim().split(/\s+/);
-        if (partes.length !== 4) return false;
-        const zona = partes[0];
-        const cuadrante = partes[1];
-        const este = partes[2];
-        const norte = partes[3];
-        const zonaRegex = /^[0-9]{1,2}[A-Z]$/i;
-        if (!zonaRegex.test(zona)) return false;
-        const cuadranteRegex = /^[A-Z]{2}$/i;
-        if (!cuadranteRegex.test(cuadrante)) return false;
-        if (!/^[0-9]{5}$/.test(este)) return false;
-        if (!/^[0-9]{5}$/.test(norte)) return false;
-        return true;
+    function utmZoneForLatLon(lat, lon) {
+        lat = Number(lat); lon = Number(lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon) || lon < -180 || lon > 180) return null;
+        let zone = Math.floor((lon + 180) / 6) + 1;
+        if (lon === 180) zone = 60;
+        // Excepciones oficiales UTM/MGRS: Noruega y Svalbard.
+        if (lat >= 56 && lat < 64 && lon >= 3 && lon < 12) zone = 32;
+        if (lat >= 72 && lat < 84) {
+            if (lon >= 0 && lon < 9) zone = 31;
+            else if (lon >= 9 && lon < 21) zone = 33;
+            else if (lon >= 21 && lon < 33) zone = 35;
+            else if (lon >= 33 && lon < 42) zone = 37;
+        }
+        return Math.max(1, Math.min(60, zone));
     }
+
+    function parseUtmStrictCoordinate(coord) {
+        if (!coord || typeof coord !== "string") return null;
+        const m = coord.trim().toUpperCase().match(/^([1-9]|[1-5][0-9]|60)([C-HJ-NP-X])\s+(\d{6})\s+(\d{7})$/);
+        if (!m) return null;
+        const zone = Number(m[1]), band = m[2], easting = Number(m[3]), northing = Number(m[4]);
+        if (easting < 100000 || easting > 900000 || northing < 0 || northing > 10000000) return null;
+        if (band === "X" && (zone === 32 || zone === 34 || zone === 36)) return null;
+        return { zone, band, easting, northing };
+    }
+
+    function esUTMValido(coord) {
+        const parsed = parseUtmStrictCoordinate(coord);
+        if (!parsed || typeof proj4 !== "function") return !!parsed;
+        try {
+            const north = MILITOPO_UTM_BANDS.indexOf(parsed.band) >= MILITOPO_UTM_BANDS.indexOf("N");
+            const projUTM = `+proj=utm +zone=${parsed.zone} +ellps=WGS84 +datum=WGS84 +units=m +no_defs ${north ? "" : "+south"}`;
+            const [lon, lat] = proj4(projUTM, "+proj=longlat +datum=WGS84 +no_defs", [parsed.easting, parsed.northing]);
+            const expectedBand = utmBandForLatitude(lat);
+            return Number.isFinite(lat) && Number.isFinite(lon) && expectedBand === parsed.band;
+        } catch (_) { return false; }
+    }
+
+    function parseMgrsStrictCoordinate(coord) {
+        if (!coord || typeof coord !== "string") return null;
+        const m = coord.trim().toUpperCase().match(/^([1-9]|[1-5][0-9]|60)([C-HJ-NP-X])\s+([A-HJ-NP-Z]{2})\s+(\d{5})\s+(\d{5})$/);
+        if (!m) return null;
+        const zone = Number(m[1]), band = m[2], grid = m[3], east = m[4], north = m[5];
+        if (band === "X" && (zone === 32 || zone === 34 || zone === 36)) return null;
+        const colSet = MILITOPO_MGRS_COL_SETS[(zone - 1) % 6];
+        if (!colSet.includes(grid[0]) || !MILITOPO_MGRS_ROWS.includes(grid[1])) return null;
+        return { zone, band, grid, east, north };
+    }
+
+    function esMGRSValido(coord) { return !!parseMgrsStrictCoordinate(coord); }
 
     function esCoordenadaValida(coord, tipo) {
         if (!coord || coord.trim() === "") return false;
@@ -56,59 +89,61 @@ let MODULOS = 8;
     }
 
     function latLonToUTM(lat, lon) {
-        const utmZone = Math.floor((lon + 180) / 6) + 1;
-        const projUTM = `+proj=utm +zone=${utmZone} +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
-        const wgs84 = "+proj=longlat +datum=WGS84 +no_defs";
-        const coord = proj4(wgs84, projUTM, [lon, lat]);
-        let este = Math.round(coord[0]);
-        let norte = Math.round(coord[1]);
-
-        const bandas = ["C","D","E","F","G","H","J","K","L","M","N","P","Q","R","S","T","U","V","W","X"];
-        let indice = Math.floor((lat + 80) / 8);
-        if (indice < 0) indice = 0;
-        if (indice >= bandas.length) indice = bandas.length - 1;
-        let letraBanda = bandas[indice];
-
-        return `${utmZone}${letraBanda} ${este} ${norte}`;
+        lat = Number(lat); lon = Number(lon);
+        const utmZone = utmZoneForLatLon(lat, lon);
+        const letraBanda = utmBandForLatitude(lat);
+        if (!utmZone || !letraBanda || typeof proj4 !== "function") return "";
+        const projUTM = `+proj=utm +zone=${utmZone} +ellps=WGS84 +datum=WGS84 +units=m +no_defs ${lat >= 0 ? "" : "+south"}`;
+        const coord = proj4("+proj=longlat +datum=WGS84 +no_defs", projUTM, [lon, lat]);
+        const este = Math.round(coord[0]);
+        const norte = Math.round(coord[1]);
+        return `${utmZone}${letraBanda} ${String(este).padStart(6,"0")} ${String(norte).padStart(7,"0")}`;
     }
 
     function latLonToMGRS(lat, lon) {
-        const utmZone = Math.floor((lon + 180) / 6) + 1;
-        const projUTM = `+proj=utm +zone=${utmZone} +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
-        const wgs84 = "+proj=longlat +datum=WGS84 +no_defs";
-        let coord = proj4(wgs84, projUTM, [lon, lat]);
-        let este = coord[0];
-        let norte = coord[1];
+        lat = Number(lat); lon = Number(lon);
+        const zone = utmZoneForLatLon(lat, lon);
+        const band = utmBandForLatitude(lat);
+        if (!zone || !band || typeof proj4 !== "function") return "";
+        const projUTM = `+proj=utm +zone=${zone} +ellps=WGS84 +datum=WGS84 +units=m +no_defs ${lat >= 0 ? "" : "+south"}`;
+        const [easting, northing] = proj4("+proj=longlat +datum=WGS84 +no_defs", projUTM, [lon, lat]);
+        const set = ((zone - 1) % 6) + 1;
+        const colLetters = MILITOPO_MGRS_COL_SETS[set - 1];
+        const colNumber = Math.floor(easting / 100000);
+        if (colNumber < 1 || colNumber > 8) return "";
+        const colLetter = colLetters[colNumber - 1];
+        const rowOffset = set % 2 === 0 ? 5 : 0;
+        const rowNumber = Math.floor(northing / 100000);
+        const rowLetter = MILITOPO_MGRS_ROWS[(rowNumber + rowOffset) % 20];
+        const east = String(Math.floor(((easting % 100000) + 100000) % 100000)).padStart(5,"0");
+        const north = String(Math.floor(((northing % 100000) + 100000) % 100000)).padStart(5,"0");
+        return `${zone}${band} ${colLetter}${rowLetter} ${east} ${north}`;
+    }
 
-        const bandas = ["C","D","E","F","G","H","J","K","L","M","N","P","Q","R","S","T","U","V","W","X"];
-        let indice = Math.floor((lat + 80) / 8);
-        if (indice < 0) indice = 0;
-        if (indice >= bandas.length) indice = bandas.length - 1;
-        let letraBanda = bandas[indice];
-        const isNorth = (lat >= 0);
-
-        const letras = ["A","B","C","D","E","F","G","H","J","K","L","M","N","P","Q","R","S","T","U","V"];
-        let columna = Math.floor(este / 100000);
-        let fila = Math.floor(norte / 100000);
-
-        if (!isNorth) fila = 19 - (fila % 20);
-        else fila = fila % 20;
-
-        columna = columna % 20;
-        let letraColumna = letras[columna];
-        let letraFila = letras[fila];
-        let cuadrante = letraColumna + letraFila;
-
-        let esteResto = Math.floor(este % 100000);
-        let norteResto = Math.floor(norte % 100000);
-        let esteStr = String(esteResto).padStart(5, '0');
-        let norteStr = String(norteResto).padStart(5, '0');
-
-        return `${utmZone}${letraBanda} ${cuadrante} ${esteStr} ${norteStr}`;
+    function mgrsToLatLon(mgrsText) {
+        const parsed = parseMgrsStrictCoordinate(mgrsText);
+        if (!parsed || typeof proj4 !== "function") return null;
+        const set = ((parsed.zone - 1) % 6) + 1;
+        const colLetters = MILITOPO_MGRS_COL_SETS[set - 1];
+        const colIndex = colLetters.indexOf(parsed.grid[0]);
+        const rowIndex = MILITOPO_MGRS_ROWS.indexOf(parsed.grid[1]);
+        if (colIndex < 0 || rowIndex < 0) return null;
+        const rowOffset = set % 2 === 0 ? 5 : 0;
+        let easting = (colIndex + 1) * 100000 + Number(parsed.east);
+        let northing = ((rowIndex - rowOffset + 20) % 20) * 100000 + Number(parsed.north);
+        const minNorthing = MILITOPO_MGRS_MIN_NORTHING[parsed.band];
+        while (northing < minNorthing) northing += 2000000;
+        const northHemisphere = MILITOPO_UTM_BANDS.indexOf(parsed.band) >= MILITOPO_UTM_BANDS.indexOf("N");
+        try {
+            const projUTM = `+proj=utm +zone=${parsed.zone} +ellps=WGS84 +datum=WGS84 +units=m +no_defs ${northHemisphere ? "" : "+south"}`;
+            const [lon, lat] = proj4(projUTM, "+proj=longlat +datum=WGS84 +no_defs", [easting, northing]);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon) || utmBandForLatitude(lat) !== parsed.band) return null;
+            return { lat, lon, zone: parsed.zone, band: parsed.band, easting, northing };
+        } catch (_) { return null; }
     }
 
     function utmToMgrs(utmStr) {
-        let latlon = utmToLatLon(utmStr);
+        const latlon = utmToLatLon(utmStr);
         if (!latlon) return "";
         return latLonToMGRS(latlon.lat, latlon.lon);
     }
@@ -181,21 +216,15 @@ let MODULOS = 8;
     function codigo3() { return String.fromCharCode(65+Math.floor(Math.random()*26)) + String.fromCharCode(65+Math.floor(Math.random()*26)) + String.fromCharCode(65+Math.floor(Math.random()*26)); }
 
     function utmToLatLon(utmStr) {
+        const parsed = parseUtmStrictCoordinate(String(utmStr || ""));
+        if (!parsed || typeof proj4 !== "function") return null;
         try {
-            let partes = utmStr.trim().split(/\s+/);
-            if (partes.length < 3) return null;
-            let zonaLetra = partes[0];
-            let este = parseFloat(partes[1]);
-            let norte = parseFloat(partes[2]);
-            let zonaNum = parseInt(zonaLetra.match(/\d+/)[0]);
-            let letra = zonaLetra.match(/[A-Z]/)[0];
-            const letrasNorte = ["N","P","R","S","T","U","V","W","X"];
-            const isNorth = letrasNorte.includes(letra);
-            const projUTM = `+proj=utm +zone=${zonaNum} +${isNorth ? 'north' : 'south'} +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
-            const wgs84 = "+proj=longlat +datum=WGS84 +no_defs";
-            let [lon, lat] = proj4(projUTM, wgs84, [este, norte]);
+            const north = MILITOPO_UTM_BANDS.indexOf(parsed.band) >= MILITOPO_UTM_BANDS.indexOf("N");
+            const projUTM = `+proj=utm +zone=${parsed.zone} +ellps=WGS84 +datum=WGS84 +units=m +no_defs ${north ? "" : "+south"}`;
+            const [lon, lat] = proj4(projUTM, "+proj=longlat +datum=WGS84 +no_defs", [parsed.easting, parsed.northing]);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon) || utmBandForLatitude(lat) !== parsed.band) return null;
             return { lat, lon };
-        } catch(e) { return null; }
+        } catch (_) { return null; }
     }
 
     function coordEjemplo(m, p, tipo) {
@@ -1678,21 +1707,8 @@ let MODULOS = 8;
     }
 
     async function parseMGRSForDistance(coordStr) {
-        if (!coordStr || typeof coordStr !== "string") return null;
-        const txt = coordStr.trim().toUpperCase().replace(/\s+/g, " ");
-        if (!/^(\d{1,2}[C-HJ-NP-X])\s+[A-HJ-NP-Z]{2}\s+\d{1,5}\s+\d{1,5}$/.test(txt)) return null;
-        try {
-            const mgrsModule = await import('https://esm.sh/mgrs@2.1.0');
-            const mgrsLib = mgrsModule.default || mgrsModule;
-            const pt = mgrsLib.toPoint(txt);
-            if (Array.isArray(pt) && pt.length >= 2) {
-                const lon = pt[0], lat = pt[1];
-                if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
-            }
-        } catch (e) {
-            console.error("Error convirtiendo MGRS:", e);
-        }
-        return null;
+        const ll = mgrsToLatLon(String(coordStr || "").trim().toUpperCase());
+        return ll ? { lat: ll.lat, lon: ll.lon } : null;
     }
 
     async function coordToLatLonForDistance(coordStr) {
