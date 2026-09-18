@@ -266,7 +266,7 @@
       frame.style.height=Math.max(window.innerHeight||0,720)+"px";
       frame.style.minHeight=Math.max(window.innerHeight||0,720)+"px";
       frame.removeAttribute("srcdoc");
-      const url="runner.html?app=1&v=v72-seguimiento-en-vivo#boot";
+      const url="runner.html?app=1&v=v73-integridad-offline-20260918#boot";
       frame.addEventListener("load",()=>loading?.classList.add("is-hidden"),{once:true});
       frame.src=url;
     }catch(error){
@@ -303,14 +303,31 @@
       return false;
     }
     try{frame.srcdoc="<!doctype html><body style='margin:0;background:#10190b;color:#f5e6c8;font-family:monospace;display:grid;place-items:center;height:100vh'>Restableciendo…</body>";}catch(_){ }
-    cleanParticipantQueue(payload.eventId,currentEventData?.webParticipantId||payload.participantId);
-    const prefixes=["militopo_v1_runner_","militopo_v1_participant_app_run_state_v1","militopo_v1_participant_gps_enabled_v1:","militopo_v1_participant_gps_lock_v1:","militopo_v1_live_v2_last_sync_","militopo_v1_participant_app_","militopo_v1_participant_boot_payload_","militopo_v1_participant_web_event_v1","militopo_v1_jsqr_cache_v1"];
-    const exact=new Set([EVENT_KEY,EVENT_BACKUP_KEY,RUN_STATE_KEY,SNAPSHOT_KEY,"militopo_v1_live_v2_participant_context","militopo_v1_participant_web_event_v1","militopo_v1_jsqr_cache_v1"]);
-    const predicate=key=>exact.has(key)||prefixes.some(prefix=>String(key).startsWith(prefix));
-    removeMatchingStorage(localStorage,predicate);removeMatchingStorage(sessionStorage,predicate);
+    const participantId=currentEventData?.webParticipantId||payload.participantId||"";
+    const eventId=payload.eventId||currentEventData?.eventId||"";
+    const eventKey=safeFirebaseKey(eventId),participantKey=participantId?safeFirebaseKey(participantId):"";
+    cleanParticipantQueue(eventId,participantId);
+    const runnerPrefix=eventId?`militopo_v1_runner_${eventId}`:"";
+    const gpsSuffix=eventId&&participantId?`${eventId}:${participantId}`:"";
+    const exact=new Set([EVENT_KEY,EVENT_BACKUP_KEY,RUN_STATE_KEY,SNAPSHOT_KEY,PERMANENT_EVENT_KEY,PERMANENT_SNAPSHOT_KEY,"militopo_v1_participant_web_event_v1","militopo_v1_jsqr_cache_v1"]);
+    if(eventKey&&participantKey)exact.add(`militopo_v1_live_v2_last_sync_${eventKey}:${participantKey}`);
+    if(gpsSuffix){exact.add(`militopo_v1_participant_gps_enabled_v1:${gpsSuffix}`);exact.add(`militopo_v1_participant_gps_lock_v1:${gpsSuffix}`);}
+    const participantPrefixes=["militopo_v1_participant_boot_payload_"];
+    const predicate=key=>exact.has(String(key))||(runnerPrefix&&String(key).startsWith(runnerPrefix))||participantPrefixes.some(prefix=>String(key).startsWith(prefix));
+    [localStorage,sessionStorage].forEach(storage=>{
+      removeMatchingStorage(storage,predicate);
+      try{
+        const contextKey="militopo_v1_live_v2_participant_context",ctx=JSON.parse(storage.getItem(contextKey)||"null");
+        const sameEvent=ctx&&(safeFirebaseKey(ctx.eventId||ctx.eventKey||"")===eventKey);
+        const sameParticipant=!participantKey||!ctx?.participantId||safeFirebaseKey(ctx.participantId)===participantKey;
+        if(sameEvent&&sameParticipant)storage.removeItem(contextKey);
+      }catch(_){ }
+    });
     try{window.name=""}catch(_){ }
     if("caches" in window){const names=await caches.keys();await Promise.all(names.filter(name=>name.startsWith("militopo-v1-participante-")).map(name=>caches.delete(name)));}
-    if("indexedDB" in window&&indexedDB.databases){try{const dbs=await indexedDB.databases();for(const db of dbs){if(/^MILITOPO_V1_/i.test(String(db.name||"")))indexedDB.deleteDatabase(db.name);}}catch(_){ }}
+    if("indexedDB" in window){
+      try{await new Promise(resolve=>{const req=indexedDB.deleteDatabase(PARTICIPANT_IDB_NAME);req.onsuccess=req.onerror=req.onblocked=()=>resolve();});}catch(_){ }
+    }
     if("serviceWorker" in navigator){try{const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.filter(reg=>new URL(reg.scope).pathname.includes("/orientacion/participante/")).map(reg=>reg.unregister()));}catch(_){ }}
     location.replace("./?modo=participante&fresh="+Date.now());
     return true;

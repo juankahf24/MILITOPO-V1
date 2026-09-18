@@ -1,22 +1,9 @@
-/* MILITOPO Participante · V72 seguimiento en vivo coherente */
-const CACHE_NAME = "militopo-v1-participante-v72-seguimiento-en-vivo";
-const APP_SHELL=["./","./index.html","./runner.html","./styles.css","./app.js","./manifest.webmanifest","./icons/participante-192.png","./icons/participante-512.png","./icons/apple-touch-icon.png","../js/live/live-phase2.js"];
-self.addEventListener("install",event=>{self.skipWaiting();event.waitUntil((async()=>{const cache=await caches.open(CACHE_NAME);await Promise.allSettled(APP_SHELL.map(url=>cache.add(new Request(url,{cache:"reload"}))));})())});
-self.addEventListener("activate",event=>{event.waitUntil((async()=>{const names=await caches.keys();await Promise.all(names.filter(name=>name.startsWith("militopo-v1-participante-")&&name!==CACHE_NAME).map(name=>caches.delete(name)));await self.clients.claim();})())});
-self.addEventListener("fetch",event=>{
-  const request=event.request;if(request.method!=="GET")return;const url=new URL(request.url);
-  if(url.origin!==self.location.origin)return;
-  if(request.mode==="navigate"){
-    event.respondWith((async()=>{
-      try{
-        const response=await fetch(request);
-        const cache=await caches.open(CACHE_NAME);
-        cache.put(request,response.clone()).catch(()=>{});
-        return response;
-      }catch(_){
-        return (await caches.match(request,{ignoreSearch:true}))||(await caches.match("./runner.html"))||(await caches.match("./index.html"))||(await caches.match("./"));
-      }
-    })());return;
-  }
-  event.respondWith((async()=>{const cached=await caches.match(request,{ignoreSearch:true});const network=fetch(request).then(async response=>{if(response&&response.ok){const cache=await caches.open(CACHE_NAME);cache.put(request,response.clone()).catch(()=>{})}return response}).catch(()=>null);return cached||(await network)||new Response("",{status:503,statusText:"Offline"})})());
-});
+/* MILITOPO Participante · v73-integridad-offline-20260918 · progreso offline primero */
+const CACHE_NAME="militopo-v1-participante-v73-integridad-offline-20260918";
+const RUNTIME_CACHE="militopo-v1-participante-runtime-v73-integridad-offline-20260918";
+const APP_SHELL=["./","./index.html","./runner.html","./styles.css","./styles.css?v=v73-integridad-offline-20260918","./app.js","./app.js?v=v73-integridad-offline-20260918","./manifest.webmanifest","./icons/participante-192.png","./icons/participante-512.png","./icons/apple-touch-icon.png","../js/live/live-phase2.js"];
+const REMOTE_ASSETS=["https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js","https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js","https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js","https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js"];
+async function cacheRemote(c,u){try{let r;try{r=await fetch(new Request(u,{mode:"cors",cache:"reload"}))}catch(_){r=await fetch(new Request(u,{mode:"no-cors",cache:"reload"}))}if(r)await c.put(u,r.clone())}catch(_){}}
+self.addEventListener("install",e=>{self.skipWaiting();e.waitUntil((async()=>{const c=await caches.open(CACHE_NAME);await Promise.allSettled(APP_SHELL.map(u=>c.add(new Request(u,{cache:"reload"}))));await Promise.allSettled(REMOTE_ASSETS.map(u=>cacheRemote(c,u)))})())});
+self.addEventListener("activate",e=>e.waitUntil((async()=>{const names=await caches.keys();await Promise.all(names.filter(n=>n.startsWith("militopo-v1-participante-")&&n!==CACHE_NAME&&n!==RUNTIME_CACHE).map(n=>caches.delete(n)));await self.clients.claim()})()));
+self.addEventListener("fetch",e=>{const req=e.request;if(req.method!=="GET")return;const url=new URL(req.url),same=url.origin===self.location.origin,trusted=url.origin==="https://cdn.jsdelivr.net"||url.origin==="https://www.gstatic.com";if(!same&&!trusted)return;e.respondWith((async()=>{const hit=(await caches.match(req,{ignoreSearch:true}));if(hit){e.waitUntil(fetch(req).then(async r=>{if(r&&r.status!==206){const c=await caches.open(same?CACHE_NAME:RUNTIME_CACHE);c.put(req,r.clone()).catch(()=>{})}}).catch(()=>{}));return hit}try{const r=await fetch(req);if(r&&r.status!==206){const c=await caches.open(same?CACHE_NAME:RUNTIME_CACHE);c.put(req,r.clone()).catch(()=>{})}return r}catch(_){if(req.mode==="navigate")return(await caches.match("./runner.html"))||(await caches.match("./index.html"))||(await caches.match("./"));return new Response("",{status:503,statusText:"Offline"})}})())});
