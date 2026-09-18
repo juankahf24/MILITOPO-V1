@@ -2444,3 +2444,101 @@ th,td{
     from { opacity: .01; transform: translateY(8px) scale(.995); }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+.manual-route-modal{
+    position:fixed;
+    inset:0;
+    z-index:9998;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    background:rgba(5,8,4,.72);
+    backdrop-filter:blur(2px);
+}
+
+.manual-route-modal-card{
+    width:min(920px,100%);
+    max-height:min(92vh,860px);
+    overflow:auto;
+    border-radius:24px;
+    border:1px solid rgba(230,188,122,.35);
+    background:linear-gradient(180deg,rgba(44,64,28,.96),rgba(18,29,13,.97));
+    box-shadow:0 24px 60px rgba(0,0,0,.36);
+    padding:16px;
+}
+
+.manual-route-modal-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:10px;
+}
+
+.manual-route-modal-head h3{
+    margin:0;
+    color:var(--gold2);
+    letter-spacing:.05em;
+}
+
+.manual-route-selected-wrap,
+.manual-route-available-wrap{
+    margin-top:10px;
+    padding:10px;
+    border-radius:16px;
+    border:1px solid rgba(230,188,122,.22);
+    background:rgba(0,0,0,.15);
+}
+
+.manual-route-subtitle{
+    font-weight:900;
+    font-size:.78rem;
+    color:var(--muted);
+    margin-bottom:8px;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+}
+
+.manual-route-selected-list,
+.manual-route-available-list{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+}
+
+.manual-route-chip{
+    border:1px solid rgba(230,188,122,.34);
+    background:rgba(57,39,23,.92);
+    color:var(--cream);
+    border-radius:999px;
+    min-height:38px;
+    padding:7px 12px;
+    font-family:inherit;
+    font-weight:900;
+    cursor:pointer;
+}
+
+.manual-route-chip.is-selected{
+    background:linear-gradient(180deg,var(--gold2),#d79735);
+    color:#2c1d0c;
+}
+
+.manual-route-chip.is-disabled,
+.manual-route-chip:disabled{
+    opacity:.4;
+    cursor:not-allowed;
+}
+
+.manual-route-empty{
+    color:var(--muted);
+    font-size:.84rem;
+}
+
+.manual-route-actions .btn{
+    flex:1 1 220px;
+}
+
+body.manual-route-modal-open{
+    overflow:hidden;
+}

@@ -2642,6 +2642,237 @@ function returnStep3MapPanelHome(){
     }
 }
 
+const manualRouteEditorState={
+    routeIndex:-1,
+    routeId:"",
+    targetCount:0,
+    selectedControlIds:[],
+    availableControlIds:[]
+};
+let manualRouteEditorLastFocus=null;
+
+function setManualRouteBackgroundHidden(hidden){
+    const targets=[document.querySelector(".app")].filter(Boolean);
+    targets.forEach(target=>{
+        if(!target)return;
+        if(hidden){
+            if("inert" in target)target.inert=true;
+            target.dataset.manualRoutePrevAriaHidden=target.getAttribute("aria-hidden")||"";
+            target.setAttribute("aria-hidden","true");
+        }else{
+            if("inert" in target)target.inert=false;
+            const prev=target.dataset.manualRoutePrevAriaHidden;
+            if(prev)target.setAttribute("aria-hidden",prev);
+            else target.removeAttribute("aria-hidden");
+            delete target.dataset.manualRoutePrevAriaHidden;
+        }
+    });
+}
+
+function linkedRouteIndexesByRouteId(routeId,fallbackIndex){
+    const linked=(state.routes||[])
+        .map((route,index)=>String(route?.routeId||"")===String(routeId)?index:-1)
+        .filter(index=>index>=0);
+    return linked.length?linked:[fallbackIndex];
+}
+
+function buildManualRouteMetrics(controlIds){
+    const startPoint=state.points.START;
+    const finishPoint=state.points.FINISH;
+    const routeControls=(Array.isArray(controlIds)?controlIds:[]).map(id=>state.points[id]).filter(Boolean);
+    const route=[startPoint,...routeControls,finishPoint];
+    const context=buildProfessionalRouteContext(startPoint,getAvailableControls(),finishPoint);
+    const quality=routeQualityDetails(route,context,1);
+    const metrics=calcRouteMetrics(route);
+    metrics.quality=quality.label;
+    metrics.qualityCode=quality.code;
+    metrics.qualityScore=Number(quality.total.toFixed(2));
+    metrics.maxLegTargetM=800;
+    metrics.overMaxLegs=Number(quality.overMaxLegs||0);
+    metrics.overMaxLegList=[...(quality.overMaxLegList||[])];
+    metrics.routeMode=context.mode==="loop"?"circular":"lineal";
+    return {metrics,quality,pointIds:route.map(point=>point.id)};
+}
+
+function applyRouteControlsToLinkedParticipants(routeIndex,controlIds){
+    routeIndex=Number(routeIndex);
+    const route=state.routes&&state.routes[routeIndex];
+    if(!route)return false;
+    const routeId=route.routeId||("R"+String(routeIndex+1).padStart(2,"0"));
+    const participantId=route.participantId||("P"+String(routeIndex+1).padStart(2,"0"));
+    const linkedIndexes=linkedRouteIndexesByRouteId(routeId,routeIndex);
+    const built=buildManualRouteMetrics(controlIds);
+    linkedIndexes.forEach(index=>{
+        const current=state.routes[index]||{};
+        state.routes[index]={
+            ...current,
+            participantId:current.participantId||participantId,
+            routeId,
+            points:[...built.pointIds]
+        };
+        state.metrics[index]={...built.metrics};
+    });
+    assignBalancedDifficulties(state.metrics);
+    state.routeQualitySummary=buildRouteQualitySummary(state.metrics);
+    state.routeWarnings=(state.routeWarnings||[]).filter(w=>!String(w).startsWith(routeId+":"));
+    if(built.quality.overMaxLegs>0)state.routeWarnings.push(`${routeId}: no fue posible mantener todos los tramos por debajo de 800 m. Tramo(s) a revisar: ${(built.quality.overMaxLegList||[]).join(", ")}. Añade o redistribuye balizas para reducirlos.`);
+    if(built.quality.shortControlLegs>0)state.routeWarnings.push(`${routeId}: contiene ${built.quality.shortControlLegs} tramo(s) entre balizas por debajo de 200 m (${(built.quality.shortControlLegList||[]).join(", ")}). Añade/mueve balizas o reduce controles por recorrido.`);
+    if(built.quality.code==="forced")state.routeWarnings.push(`${routeId}: Recorrido forzado. Revisa distribución de balizas, reduce controles por recorrido o mueve salida/llegada.`);
+    else if(built.quality.code==="acceptable")state.routeWarnings.push(`${routeId}: Recorrido aceptable. Trazado válido, pero no totalmente limpio.`);
+    renderRoutes();
+    renderQrPreview();
+    updateParticipantSelect();
+    saveState();
+    toast(`${routeId} actualizado manualmente en ${linkedIndexes.length} participante${linkedIndexes.length===1?"":"s"}`);
+    return true;
+}
+
+function ensureManualRouteEditorModal(){
+    let modal=document.getElementById("manualRouteEditorModal");
+    if(modal)return modal;
+    modal=document.createElement("section");
+    modal.id="manualRouteEditorModal";
+    modal.className="manual-route-modal";
+    modal.setAttribute("role","dialog");
+    modal.setAttribute("aria-modal","true");
+    modal.setAttribute("aria-labelledby","manualRouteEditorTitle");
+    modal.style.display="none";
+    modal.innerHTML=`
+        <div class="manual-route-modal-card">
+            <div class="manual-route-modal-head">
+                <h3 id="manualRouteEditorTitle">Regenerar recorrido manualmente</h3>
+                <button type="button" class="btn secondary manual-route-close-btn" id="manualRouteCloseBtn">Cerrar</button>
+            </div>
+            <div id="manualRouteEditorBody"></div>
+        </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener("click",ev=>{if(ev.target===modal)closeManualRouteEditor();});
+    modal.addEventListener("keydown",ev=>{
+        if(ev.key==="Escape"){ev.preventDefault();closeManualRouteEditor();return;}
+        if(ev.key!=="Tab")return;
+        const focusables=[...modal.querySelectorAll('button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(el=>el.offsetParent!==null);
+        if(!focusables.length){ev.preventDefault();return;}
+        const first=focusables[0];
+        const last=focusables[focusables.length-1];
+        if(ev.shiftKey){
+            if(document.activeElement===first||!modal.contains(document.activeElement)){ev.preventDefault();last.focus();}
+        }else if(document.activeElement===last||!modal.contains(document.activeElement)){
+            ev.preventDefault();
+            first.focus();
+        }
+    });
+    const closeBtn=modal.querySelector("#manualRouteCloseBtn");
+    if(closeBtn)closeBtn.addEventListener("click",closeManualRouteEditor);
+    return modal;
+}
+
+function renderManualRouteEditor(){
+    const modal=ensureManualRouteEditorModal();
+    const body=modal.querySelector("#manualRouteEditorBody");
+    if(!body)return;
+    const selected=Array.isArray(manualRouteEditorState.selectedControlIds)?manualRouteEditorState.selectedControlIds:[];
+    const selectedSet=new Set(selected);
+    const routeRef=manualRouteEditorState.routeId||`R${String(manualRouteEditorState.routeIndex+1).padStart(2,"0")}`;
+    const target=Math.max(1,Number(manualRouteEditorState.targetCount)||1);
+    body.innerHTML=`
+        <div class="status ${selected.length===target?"ok":"warn"}" style="margin-top:0;">
+            ${routeRef}: selecciona <b>${target}</b> baliza${target===1?"":"s"} en el orden deseado. Seleccionadas: <b>${selected.length}/${target}</b>.
+        </div>
+        <div class="manual-route-selected-wrap">
+            <div class="manual-route-subtitle">Secuencia actual</div>
+            <div class="manual-route-selected-list">
+                ${selected.length?selected.map((id,index)=>`<button type="button" class="manual-route-chip is-selected" data-remove-index="${index}" title="Quitar ${escapeHtml(id)}" aria-label="Quitar baliza ${escapeHtml(id)} de la posición ${index+1}">${index+1}. ${escapeHtml(id)} <span aria-hidden="true">✕</span></button>`).join(""):'<span class="manual-route-empty">Todavía no has añadido balizas.</span>'}
+            </div>
+        </div>
+        <div class="manual-route-available-wrap">
+            <div class="manual-route-subtitle">Balizas disponibles</div>
+            <div class="manual-route-available-list">
+                ${manualRouteEditorState.availableControlIds.map(id=>{
+                    const blocked=selectedSet.has(id)||selected.length>=target;
+                    return `<button type="button" class="manual-route-chip ${blocked?"is-disabled":""}" data-add-id="${escapeHtml(id)}" ${blocked?"disabled":""}>${escapeHtml(id)}</button>`;
+                }).join("")}
+            </div>
+        </div>
+        <div class="btn-row manual-route-actions">
+            <button type="button" class="btn secondary" id="manualRouteUndoBtn" ${selected.length?"":"disabled"}>↩️ DESHACER ÚLTIMA</button>
+            <button type="button" class="btn secondary" id="manualRouteClearBtn" ${selected.length?"":"disabled"}>🧹 LIMPIAR</button>
+            <button type="button" class="btn green" id="manualRouteConfirmBtn" ${selected.length===target?"":"disabled"}>✅ GUARDAR RECORRIDO</button>
+        </div>`;
+    body.querySelectorAll("[data-add-id]").forEach(btn=>{
+        btn.addEventListener("click",()=>{
+            const id=String(btn.dataset.addId||"");
+            if(!id)return;
+            if(manualRouteEditorState.selectedControlIds.length>=target)return;
+            if(manualRouteEditorState.selectedControlIds.includes(id))return;
+            manualRouteEditorState.selectedControlIds.push(id);
+            renderManualRouteEditor();
+        });
+    });
+    body.querySelectorAll("[data-remove-index]").forEach(btn=>{
+        btn.addEventListener("click",()=>{
+            const index=Number(btn.dataset.removeIndex);
+            if(!Number.isInteger(index)||index<0)return;
+            manualRouteEditorState.selectedControlIds.splice(index,1);
+            renderManualRouteEditor();
+        });
+    });
+    const undoBtn=body.querySelector("#manualRouteUndoBtn");
+    if(undoBtn)undoBtn.addEventListener("click",()=>{
+        manualRouteEditorState.selectedControlIds.pop();
+        renderManualRouteEditor();
+    });
+    const clearBtn=body.querySelector("#manualRouteClearBtn");
+    if(clearBtn)clearBtn.addEventListener("click",()=>{
+        manualRouteEditorState.selectedControlIds=[];
+        renderManualRouteEditor();
+    });
+    const confirmBtn=body.querySelector("#manualRouteConfirmBtn");
+    if(confirmBtn)confirmBtn.addEventListener("click",()=>{
+        if(manualRouteEditorState.selectedControlIds.length!==target){
+            toast(`Selecciona exactamente ${target} baliza${target===1?"":"s"} antes de guardar.`);
+            return;
+        }
+        const ok=applyRouteControlsToLinkedParticipants(manualRouteEditorState.routeIndex,manualRouteEditorState.selectedControlIds);
+        if(ok)closeManualRouteEditor();
+    });
+}
+
+function openManualRouteEditor(routeIndex){
+    routeIndex=Number(routeIndex);
+    syncConfigFromUi();
+    const route=state.routes&&state.routes[routeIndex];
+    if(!Number.isInteger(routeIndex)||!route){toast("Recorrido no encontrado");return false;}
+    const validation=validatePoints();
+    if(!validation.ok){toast("Completa salida, llegada y balizas antes de regenerar manualmente.");return false;}
+    const controls=getAvailableControls().map(control=>control.id);
+    if(!controls.length){toast("No hay balizas disponibles para este recorrido.");return false;}
+    const target=Math.min(Math.max(1,Number(state.controlsPerRoute)||1),controls.length);
+    manualRouteEditorState.routeIndex=routeIndex;
+    manualRouteEditorState.routeId=String(route.routeId||("R"+String(routeIndex+1).padStart(2,"0")));
+    manualRouteEditorState.targetCount=target;
+    manualRouteEditorState.availableControlIds=controls;
+    manualRouteEditorState.selectedControlIds=[...new Set((route.points||[]).filter(id=>id!=="START"&&id!=="FINISH").filter(id=>controls.includes(id)))].slice(0,target);
+    manualRouteEditorLastFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    ensureManualRouteEditorModal().style.display="flex";
+    document.body.classList.add("manual-route-modal-open");
+    setManualRouteBackgroundHidden(true);
+    renderManualRouteEditor();
+    const modal=document.getElementById("manualRouteEditorModal");
+    const focusTarget=modal?.querySelector("#manualRouteConfirmBtn:not([disabled]), [data-add-id]:not([disabled]), #manualRouteCloseBtn");
+    if(focusTarget&&typeof focusTarget.focus==="function")focusTarget.focus();
+    return true;
+}
+
+function closeManualRouteEditor(){
+    const modal=document.getElementById("manualRouteEditorModal");
+    if(modal)modal.style.display="none";
+    document.body.classList.remove("manual-route-modal-open");
+    setManualRouteBackgroundHidden(false);
+    const restore=manualRouteEditorLastFocus;
+    manualRouteEditorLastFocus=null;
+    if(restore&&restore.isConnected&&typeof restore.focus==="function")restore.focus();
+}
+
 function renderRoutes(){
     const grid=document.getElementById("routesGrid");
     if(!grid)return;
@@ -2713,7 +2944,7 @@ function renderRoutes(){
             </div>
             <div class="status ${qClass}" style="margin-top:10px;">${escapeHtml(quality)}${m.routeMode?` · ${escapeHtml(m.routeMode)}`:""}</div>
             <div class="route-line">${r.points.map(escapeHtml).join(" → ")}</div>
-            <div class="btn-row"><button class="btn secondary" onclick="previewRouteByKey(\'${escapeHtml(r.routeId)}\',\'${escapeHtml(r.participantId)}\')">🗺️ VER EN PLANO</button><button class="btn" onclick="regenerateSingleRoute(${i})">🔁 REGENERAR SOLO ESTE</button></div>`;
+            <div class="btn-row"><button class="btn secondary" onclick="previewRouteByKey(\'${escapeHtml(r.routeId)}\',\'${escapeHtml(r.participantId)}\')">🗺️ VER EN PLANO</button><button class="btn" onclick="regenerateSingleRoute(${i})">🔁 REGENERAR SOLO ESTE</button><button class="btn secondary" onclick="openManualRouteEditor(${i})">✍️ REGENERAR MANUALMENTE</button></div>`;
         grid.appendChild(div);
     });
 }
@@ -3164,14 +3395,14 @@ function routeHasImportedResult(route){
 
 function startFlowStatusForRoute(route){
     if(isRouteSkipped(route))return {stage:"discarded",cls:"bad",icon:"🚫",label:"Descartado",hint:"No se entrega ni cuenta en resultados"};
-    if(routeHasImportedResult(route))return {stage:"result",cls:"ok",icon:"📥",label:"Finalizados con resultado",hint:"QR final importado"};
     const st=getStartFlowStatus(route);
+    if(routeHasImportedResult(route)||st.liveResultReceived===true||!!String(st.liveResultCode||"").trim())return {stage:"result",cls:"ok",icon:"📥",label:"Finalizados con resultado",hint:"Resultado recibido en directo o importado"};
     if(st.finishQrDeliveredAt)return {stage:"finished",cls:"ok",icon:"🏁",label:"Finalizados",hint:"QR llegada entregado · esperando QR final de resultado"};
     if(st.startQrDeliveredAt)return {stage:"race",cls:"ok",icon:"🏃",label:"En carrera",hint:"Salida entregada · llegada pendiente"};
     return {stage:"pending",cls:"pending",icon:"⏳",label:"Pendientes",hint:"Aún sin salida entregada"};
 }
 
-window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS=function(participantId,status){
+window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS=function(participantId,status,extra={}){
     try{
         const route=getRouteByParticipant(String(participantId||""));
         if(!route)return false;
@@ -3179,6 +3410,8 @@ window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS=function(participantId,status){
         const key=startFlowStatusKey(route);
         const current=store[key]||{participantId:route.participantId,routeId:route.routeId};
         const now=new Date().toISOString();
+        const payload=extra&&typeof extra==="object"?extra:{};
+        const liveResultReceived=payload.resultImported===true||!!String(payload.resultCode||"").trim();
         let changed=false;
         if(status==="racing"){
             if(!current.startQrShownAt){current.startQrShownAt=now;changed=true;}
@@ -3189,6 +3422,14 @@ window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS=function(participantId,status){
             if(!current.startQrDeliveredAt){current.startQrDeliveredAt=now;changed=true;}
             if(!current.finishQrShownAt){current.finishQrShownAt=now;changed=true;}
             if(!current.finishQrDeliveredAt){current.finishQrDeliveredAt=now;changed=true;}
+        }
+        if(payload.startTime && !current.startQrDeliveredAt){current.startQrDeliveredAt=payload.startTime;changed=true;}
+        if(payload.finishTime && !current.finishQrDeliveredAt){current.finishQrDeliveredAt=payload.finishTime;changed=true;}
+        if(liveResultReceived){
+            if(current.liveResultReceived!==true){current.liveResultReceived=true;changed=true;}
+            const nextCode=String(payload.resultCode||"").trim();
+            if(nextCode && current.liveResultCode!==nextCode){current.liveResultCode=nextCode;changed=true;}
+            if(!current.liveResultReceivedAt){current.liveResultReceivedAt=now;changed=true;}
         }
         if(!changed)return true;
         current.updatedAt=now;
