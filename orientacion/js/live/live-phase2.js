@@ -1,4 +1,4 @@
-/* MILITOPO LIVE · V75 persistencia reforzada de carrera
+/* MILITOPO LIVE · V77 persistencia + reset seguro
    Sincronización automática de salida, controles, llegada y resultado.
    El organizador recibe e importa el ORI|RESULT sin escanearlo.
    El QR final y el código manual permanecen como respaldo. */
@@ -233,6 +233,14 @@ async function organizerRaceSnapshotDelete(eventKey,runId){
   const dbx=await organizerRaceSnapshotOpen();
   try{await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_RACE_SNAPSHOT_STORE,"readwrite");tx.objectStore(ORGANIZER_RACE_SNAPSHOT_STORE).delete(`${eventKey}:${runId}`);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
   finally{try{dbx.close()}catch(_){}}
+}
+async function organizerRaceSnapshotDeleteEvent(eventKey){
+  if(!eventKey)return;
+  const dbx=await organizerRaceSnapshotOpen();
+  try{
+    const rows=await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_RACE_SNAPSHOT_STORE,"readonly");const req=tx.objectStore(ORGANIZER_RACE_SNAPSHOT_STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});
+    await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_RACE_SNAPSHOT_STORE,"readwrite");const store=tx.objectStore(ORGANIZER_RACE_SNAPSHOT_STORE);rows.filter(row=>String(row?.eventKey||"")===String(eventKey)).forEach(row=>store.delete(row.id));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});
+  }finally{try{dbx.close()}catch(_){}}
 }
 function clearOrganizerParticipantsSnapshot(eventKey,runId){
   const key=organizerSnapshotStorageKey(eventKey,runId);if(!key)return;
@@ -550,6 +558,14 @@ async function organizerTrackVaultDeleteRun(eventKey,runId){
   try{
     const rows=await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_TRACK_VAULT_STORE,"readonly");const req=tx.objectStore(ORGANIZER_TRACK_VAULT_STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});
     await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_TRACK_VAULT_STORE,"readwrite");const store=tx.objectStore(ORGANIZER_TRACK_VAULT_STORE);rows.filter(row=>row.eventKey===eventKey&&row.runId===runId).forEach(row=>store.delete(row.id));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});
+  }finally{try{dbx.close()}catch(_){}}
+}
+async function organizerTrackVaultDeleteEvent(eventKey){
+  if(!eventKey)return;
+  const dbx=await organizerTrackVaultOpen();
+  try{
+    const rows=await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_TRACK_VAULT_STORE,"readonly");const req=tx.objectStore(ORGANIZER_TRACK_VAULT_STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});
+    await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_TRACK_VAULT_STORE,"readwrite");const store=tx.objectStore(ORGANIZER_TRACK_VAULT_STORE);rows.filter(row=>String(row?.eventKey||"")===String(eventKey)).forEach(row=>store.delete(row.id));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});
   }finally{try{dbx.close()}catch(_){}}
 }
 
@@ -897,12 +913,32 @@ function organizerProgressSummary(rows=organizerLatestRows) {
   return {total:list.length,started,finished,awaitingArrival,awaitingDelivery,notStarted};
 }
 
+function organizerParticipantHasRaceEvidence(row){
+  if(!row||typeof row!=="object")return false;
+  return row.status==="racing"||row.status==="finished"||!!row.startTime||!!row.finishTime||
+    !!String(row.resultCode||"").trim()||row.resultReceivedClient===true||row.resultImported===true||
+    Number(row.trackPointCount)>0||row.trackComplete===true||
+    (Array.isArray(row.track)&&row.track.length>0)||(Array.isArray(row.scans)&&row.scans.length>0);
+}
+function organizerRowsHaveRaceEvidence(rows=organizerLatestRows){
+  return (Array.isArray(rows)?rows:[]).some(organizerParticipantHasRaceEvidence);
+}
+window.MILITOPO_LIVE_HAS_CURRENT_RACE_DATA=function(){
+  try{
+    const ctx=organizerContext()||{};
+    const currentEventKey=safeFirebaseKey(ctx.eventId||"");
+    if(!currentEventKey||currentEventKey!==organizerEventKey)return false;
+    return organizerRowsHaveRaceEvidence(organizerLatestRows)||
+      organizerRowsHaveRaceEvidence(Object.values(organizerLatestParticipantsValue||{}));
+  }catch(_){return false}
+};
+
 function renderOrganizerParticipants(participantsValue) {
   organizerLatestParticipantsValue=participantsValue&&typeof participantsValue==="object"?participantsValue:{};
   const participants = mergeOrganizerParticipantsWithContext(organizerLatestParticipantsValue);
   const rows = applyOrganizerColumnSort(sortOrganizerParticipants(participants));
   organizerLatestRows = rows;
-  if(organizerRunId)try{window.MILITOPO_TOUCH_RACE_DATA?.({runId:organizerRunId,status:organizerRunStatus||"active",lastDataAt:nowIso()})}catch(_){}
+  if(organizerRunId&&organizerRowsHaveRaceEvidence(rows))try{window.MILITOPO_TOUCH_RACE_DATA?.({runId:organizerRunId,status:organizerRunStatus||"active",lastDataAt:nowIso()})}catch(_){}
   const allReceivedRows=Object.values(organizerLatestParticipantsValue||{}).filter(value=>value&&typeof value==="object");
   // La copia local conserva también participantes temporalmente descartados. Solo
   // se filtran al pintar la tabla; sus últimos resultados/metadatos no se destruyen.
@@ -1078,7 +1114,8 @@ async function attachOrganizerRun(eventKey, runId, meta = null) {
   const ctx=organizerContext()||{};
   if($("live2RunText"))$("live2RunText").innerHTML=`Ejercicio: <b>${safeText(ctx.eventName||meta?.eventName||"ORIENTACIÓN")}</b><br>Sesión: <b>${safeText(nextRunId)}</b><br>Estado: <b>${archived?"ARCHIVADA · DATOS CONSERVADOS":closing?"RECEPCIÓN DE LLEGADAS Y ENVÍOS":"EN CURSO"}</b>`;
   try{localStorage.setItem(ORGANIZER_RUN_KEY_PREFIX+nextEventKey,nextRunId);}catch(_){}
-  try{window.MILITOPO_PROTECT_RACE_DATA?.({runId:nextRunId,status:organizerRunStatus||"active",startedAt:meta?.startedAtClient||nowIso()})}catch(_){}
+  // Vincular/recuperar una sesión no bloquea el diseño por sí solo. La protección
+  // se activa cuando existe una salida o dato real de carrera.
 
   if(!sameRun){
     cleanupOrganizerRunListener();
@@ -1310,6 +1347,40 @@ async function stopOrganizerRun() {
   }
 }
 
+async function purgeOrganizerLocalEventData(eventId){
+  const eventKey=safeFirebaseKey(eventId||organizerEventKey||"");
+  if(!eventKey)return false;
+  try{
+    const snapshotPrefix=`${ORGANIZER_RUN_SNAPSHOT_KEY_PREFIX}${eventKey}:`;
+    const autoPrefix=`${AUTO_IMPORT_KEY_PREFIX}${eventKey}_`;
+    Object.keys(localStorage).forEach(key=>{
+      if(key===ORGANIZER_RUN_KEY_PREFIX+eventKey||key.startsWith(snapshotPrefix)||key.startsWith(autoPrefix))localStorage.removeItem(key);
+    });
+  }catch(_){}
+  clearOrganizerParticipantsSnapshotsForEvent(eventKey);
+  await Promise.allSettled([
+    organizerRaceSnapshotDeleteEvent(eventKey),
+    organizerTrackVaultDeleteEvent(eventKey)
+  ]);
+  [...organizerTrackMemory.keys()].filter(key=>key.startsWith(`${eventKey}:`)).forEach(key=>organizerTrackMemory.delete(key));
+  [...organizerTrackHydrationBusy].filter(key=>String(key).startsWith(`${eventKey}:`)).forEach(key=>organizerTrackHydrationBusy.delete(key));
+  if(organizerEventKey===eventKey){
+    cleanupOrganizerRunListener();
+    if(typeof organizerUnsubActive==="function")organizerUnsubActive();
+    organizerUnsubActive=null;
+    organizerEventKey="";
+    organizerRunId="";
+    organizerRunStatus="";
+    organizerLatestParticipantsValue={};
+    organizerLatestRows=[];
+    organizerAutoImportedCount=0;
+    organizerAutoImportBusy.clear();
+    organizerLocalRecoveryKey="";
+  }
+  return true;
+}
+window.MILITOPO_LIVE_PURGE_LOCAL_EVENT=purgeOrganizerLocalEventData;
+
 async function deleteOrganizerRaceData(options={}){
   const skipConfirm=options?.skipConfirm===true;
   const eventKey=String(organizerEventKey||safeFirebaseKey(organizerContext()?.eventId||""));
@@ -1350,12 +1421,41 @@ async function deleteOrganizerRaceData(options={}){
 }
 async function deleteOrganizerExerciseCompletely(){
   if(!window.confirm("BORRAR EJERCICIO COMPLETO eliminará configuración, recorridos y todos los datos de la carrera actual.\n\n¿Quieres continuar?"))return false;
-  const runId=String(organizerRunId||organizerContext()?.liveRunId||"");
-  if(runId){const ok=await deleteOrganizerRaceData({skipConfirm:true});if(!ok)return false;}
+  if(!window.confirm("CONFIRMACIÓN FINAL\n\nSe eliminará por completo este ejercicio y sus recorridos guardados. ¿Confirmas el borrado definitivo?"))return false;
+  const ctx=organizerContext()||{};
+  const eventId=String(ctx.eventId||organizerEventKey||"");
+  const eventKey=safeFirebaseKey(eventId);
+  let runId=String(organizerRunId||ctx.liveRunId||"");
+  if(!runId&&eventKey)try{runId=String(localStorage.getItem(ORGANIZER_RUN_KEY_PREFIX+eventKey)||"").trim()}catch(_){}
+  if(!runId&&eventKey&&db&&currentUser&&firebaseConnected){
+    try{const activeSnap=await get(ref(db,activeRunPath(eventKey)));runId=String(activeSnap?.val()?.runId||"").trim()}catch(_){}
+  }
+  const hasRealRaceData=organizerRowsHaveRaceEvidence(organizerLatestRows)||organizerRowsHaveRaceEvidence(Object.values(organizerLatestParticipantsValue||{}));
+  if(runId){
+    if(!db||!currentUser||!firebaseConnected){
+      if(hasRealRaceData){
+        setMessage("Este ejercicio contiene datos reales de carrera sincronizados. Conecta Firebase antes de borrarlo completamente para no dejar una copia remota huérfana.","error");
+        return false;
+      }
+      await purgeOrganizerLocalEventData(eventKey);
+      runId="";
+    }else{
+      organizerEventKey=eventKey;
+      organizerRunId=runId;
+      const ok=await deleteOrganizerRaceData({skipConfirm:true});
+      if(!ok)return false;
+    }
+  }else if(eventKey){
+    await purgeOrganizerLocalEventData(eventKey);
+  }
   window.__militopoDeleteExerciseInProgress=true;
-  try{if(typeof window.resetSavedEvent==="function")window.resetSavedEvent();else if(typeof resetSavedEvent==="function")resetSavedEvent();}
-  finally{setTimeout(()=>{window.__militopoDeleteExerciseInProgress=false},0)}
-  return true;
+  window.__militopoDeleteExerciseResetConfirmed=true;
+  try{
+    let resetOk=true;
+    if(typeof window.resetSavedEvent==="function")resetOk=await window.resetSavedEvent();
+    else if(typeof resetSavedEvent==="function")resetOk=await resetSavedEvent();
+    return resetOk!==false;
+  }finally{setTimeout(()=>{window.__militopoDeleteExerciseInProgress=false;window.__militopoDeleteExerciseResetConfirmed=false},0)}
 }
 window.MILITOPO_LIVE_DELETE_RACE_DATA=deleteOrganizerRaceData;
 window.MILITOPO_LIVE_DELETE_EXERCISE=deleteOrganizerExerciseCompletely;
