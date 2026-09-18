@@ -1,4 +1,4 @@
-/* MILITOPO LIVE · V73 panel en vivo coherente y recuperable
+/* MILITOPO LIVE · V74 panel en vivo coherente y recuperable
    Sincronización automática de salida, controles, llegada y resultado.
    El organizador recibe e importa el ORI|RESULT sin escanearlo.
    El QR final y el código manual permanecen como respaldo. */
@@ -68,6 +68,8 @@ let organizerUnsubActive = null;
 let organizerUnsubParticipants = null;
 let organizerContextTimer = null;
 let organizerClockTimer = null;
+let organizerLocalRecoveryKey = "";
+let organizerLocalRecoveryBusy = false;
 const organizerAutoImportBusy = new Set();
 let organizerAutoImportedCount = 0;
 
@@ -204,10 +206,11 @@ function writeOrganizerParticipantsSnapshot(rows, eventKey = organizerEventKey, 
   if (!key) return;
   try {
     const list = Array.isArray(rows) ? rows : [];
-    const participants = {};
+    const participants = { ...readOrganizerParticipantsSnapshot(eventKey, runId) };
     list.forEach((row, index) => {
       const pid = String(row?.participantId || index);
-      participants[safeFirebaseKey(pid)] = slimOrganizerParticipant(row);
+      const mapKey=safeFirebaseKey(pid);
+      participants[mapKey] = mergeOrganizerParticipantRecords(participants[mapKey]||{},slimOrganizerParticipant(row));
     });
     localStorage.setItem(key, JSON.stringify({ savedAt: nowIso(), participants }));
   } catch (error) {
@@ -770,9 +773,18 @@ function mergeOrganizerParticipantsWithContext(participantsValue) {
   const remote=participantsValue&&typeof participantsValue==="object"?participantsValue:{};
   const snapshot=readOrganizerParticipantsSnapshot();
   const combined=mergeOrganizerParticipantMaps(snapshot,remote);
+  const context=organizerContext()||{};
+  const routes=Array.isArray(context.routes)?context.routes:[];
+  const allParticipantIds=new Set((Array.isArray(context.allParticipantIds)?context.allParticipantIds:[]).map(value=>String(value||"")).filter(Boolean));
+  const activeParticipantIds=new Set(routes.map(route=>String(route?.participantId||"")).filter(Boolean));
   const merged={};
-  Object.entries(combined).forEach(([key,value])=>{merged[key]={...(value||{})};});
-  const routes=Array.isArray(organizerContext()?.routes)?organizerContext().routes:[];
+  Object.entries(combined).forEach(([key,value])=>{
+    const pid=String(value?.participantId||key||"");
+    // Si el organizador conoce la lista completa, solo la lista activa se muestra.
+    // El registro descartado sigue intacto en snapshot/Firebase para poder reactivarlo.
+    if(allParticipantIds.size && !activeParticipantIds.has(pid))return;
+    merged[key]={...(value||{})};
+  });
   routes.forEach(route=>{
     const pid=String(route?.participantId||"").trim();
     if(!pid)return;
@@ -833,7 +845,18 @@ function renderOrganizerParticipants(participantsValue) {
   const participants = mergeOrganizerParticipantsWithContext(organizerLatestParticipantsValue);
   const rows = applyOrganizerColumnSort(sortOrganizerParticipants(participants));
   organizerLatestRows = rows;
-  if(organizerEventKey && organizerRunId) writeOrganizerParticipantsSnapshot(rows);
+  const allReceivedRows=Object.values(organizerLatestParticipantsValue||{}).filter(value=>value&&typeof value==="object");
+  // La copia local conserva también participantes temporalmente descartados. Solo
+  // se filtran al pintar la tabla; sus últimos resultados/metadatos no se destruyen.
+  if(organizerEventKey && organizerRunId) writeOrganizerParticipantsSnapshot([...allReceivedRows,...rows]);
+  allReceivedRows.forEach(p=>{
+    if(!Array.isArray(p?.track)||!p.track.length||!organizerEventKey||!organizerRunId)return;
+    const digest=stableTrackDigest(p.track);
+    if(p?.trackDigest&&String(p.trackDigest)!==digest)return;
+    const vaultKey=`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p.participantId)}`;
+    organizerTrackMemory.set(vaultKey,p.track);
+    organizerTrackVaultPut({id:vaultKey,eventKey:organizerEventKey,runId:organizerRunId,participantId:String(p.participantId||""),trackPointCount:p.track.length,trackDigest:digest,track:p.track,savedAt:nowIso()}).catch(error=>console.warn("MILITOPO LIVE · vault oculto",error));
+  });
   rows.forEach(p=>{
     if(!Array.isArray(p?.track)||!p.track.length)return;
     const digest=stableTrackDigest(p.track);
@@ -927,6 +950,10 @@ function renderOrganizerParticipants(participantsValue) {
   processFinishedResults(rows).catch(error=>console.warn("MILITOPO LIVE · procesar resultados",error));
   updateOrganizerButtons();
 }
+
+window.MILITOPO_LIVE_REFRESH_ORGANIZER_CONTEXT=function(){
+  try{renderOrganizerParticipants(organizerLatestParticipantsValue||{});return true}catch(error){console.warn("MILITOPO LIVE · refresco local",error);return false}
+};
 
 function updateOrganizerButtons() {
   const ready = Boolean(currentUser && firebaseConnected);
@@ -1277,12 +1304,45 @@ async function resetOrganizerEventForReusableExercise(eventId) {
   }
 }
 
+async function recoverOrganizerRunFromLocalDevice(ctx){
+  const eventId=String(ctx?.eventId||"").trim();
+  if(!eventId||organizerLocalRecoveryBusy)return;
+  const eventKey=safeFirebaseKey(eventId);
+  let runId="";
+  try{runId=String(localStorage.getItem(ORGANIZER_RUN_KEY_PREFIX+eventKey)||"").trim()}catch(_){ }
+  if(!runId)return;
+  const recoveryKey=`${eventKey}:${runId}`;
+  if(organizerLocalRecoveryKey===recoveryKey)return;
+  organizerLocalRecoveryBusy=true;
+  try{
+    organizerEventKey=eventKey;
+    organizerRunId=runId;
+    if(!organizerRunStatus)organizerRunStatus="closing";
+    organizerLatestParticipantsValue=mergeOrganizerParticipantMaps(readOrganizerParticipantsSnapshot(eventKey,runId),organizerLatestParticipantsValue||{});
+    renderOrganizerParticipants(organizerLatestParticipantsValue);
+    const rows=await organizerTrackVaultLoadRun(eventKey,runId);
+    rows.forEach(row=>{
+      if(!Array.isArray(row.track)||row.track.length!==Number(row.trackPointCount||0)||stableTrackDigest(row.track)!==String(row.trackDigest||""))return;
+      organizerTrackMemory.set(row.id,row.track);
+      if(typeof window.MILITOPO_LIVE_ATTACH_TRACK==="function")window.MILITOPO_LIVE_ATTACH_TRACK(row.participantId,row.track,{trackPointCount:row.trackPointCount,trackDigest:row.trackDigest,live:true,recovered:true});
+    });
+    organizerLocalRecoveryKey=recoveryKey;
+    renderOrganizerParticipants(organizerLatestParticipantsValue);
+  }catch(error){
+    console.warn("MILITOPO LIVE · recuperación local sin cobertura",error);
+  }finally{
+    organizerLocalRecoveryBusy=false;
+  }
+}
+
 function startOrganizerContextWatcher() {
   buildOrganizerPanel();
   const tick=()=>{
     const ctx=organizerContext();
+    if(ctx?.eventId)recoverOrganizerRunFromLocalDevice(ctx);
     if(ctx?.eventId&&currentUser&&db)bindOrganizerEvent(ctx);
     if(organizerRunId)renderOrganizerParticipants(organizerLatestParticipantsValue);
+    else if(ctx?.eventId)renderOrganizerParticipants(organizerLatestParticipantsValue||{});
   };
   tick();
   organizerContextTimer=window.setInterval(tick,1800);
