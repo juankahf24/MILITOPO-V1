@@ -4418,7 +4418,7 @@ function openMapModal() {
             const timerId = window.setTimeout(() => {
                 overlay.classList.add("startup-buttons-ready");
                 overlay.querySelectorAll(".startup-seq-btn").forEach(btn => {
-                    btn.disabled = btn.dataset.startupPrevDisabled === "1";
+                    btn.disabled = false;
                     delete btn.dataset.startupPrevDisabled;
                 });
                 overlay.dataset.buttonsReadyTimer = "";

@@ -8155,14 +8155,14 @@ body.page-exit {
   filter: none;
 }
 
-.startup-overlay.is-open.startup-sequence-run .startup-seq-buttons .startup-seq-btn {
+.startup-overlay.is-open.startup-sequence-run.startup-buttons-ready .startup-seq-buttons .startup-seq-btn {
   animation: startupButtonReveal .58s cubic-bezier(.16,.84,.24,1) forwards;
 }
 
-.startup-overlay.is-open.startup-sequence-run .startup-seq-buttons .startup-seq-btn:nth-child(1) { animation-delay: 1.34s; }
-.startup-overlay.is-open.startup-sequence-run .startup-seq-buttons .startup-seq-btn:nth-child(2) { animation-delay: 1.48s; }
+.startup-overlay.is-open.startup-sequence-run.startup-buttons-ready .startup-seq-buttons .startup-seq-btn:nth-child(1) { animation-delay: .04s; }
+.startup-overlay.is-open.startup-sequence-run.startup-buttons-ready .startup-seq-buttons .startup-seq-btn:nth-child(2) { animation-delay: .16s; }
 
-.startup-overlay.is-open.startup-sequence-run .startup-seq-buttons {
+.startup-overlay.is-open.startup-sequence-run.startup-buttons-ready .startup-seq-buttons {
   visibility: visible;
   transition: filter .42s ease;
   filter: drop-shadow(0 14px 24px rgba(0,0,0,.30));
