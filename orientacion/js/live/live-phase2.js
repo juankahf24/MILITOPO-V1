@@ -1,4 +1,4 @@
-/* MILITOPO LIVE · V74 panel en vivo coherente y recuperable
+/* MILITOPO LIVE · V75 persistencia reforzada de carrera
    Sincronización automática de salida, controles, llegada y resultado.
    El organizador recibe e importa el ORI|RESULT sin escanearlo.
    El QR final y el código manual permanecen como respaldo. */
@@ -52,6 +52,8 @@ const TRACK_OUTBOX_STORE = "bundles";
 const TRACK_UPLOAD_CHUNK_SIZE = 100;
 const ORGANIZER_TRACK_VAULT_DB = "MILITOPO_V1_ORGANIZER_TRACK_VAULT_V1";
 const ORGANIZER_TRACK_VAULT_STORE = "tracks";
+const ORGANIZER_RACE_SNAPSHOT_DB = "MILITOPO_V1_ORGANIZER_RACE_SNAPSHOT_V1";
+const ORGANIZER_RACE_SNAPSHOT_STORE = "runs";
 
 let app = null;
 let auth = null;
@@ -201,6 +203,43 @@ function slimOrganizerParticipant(row) {
     source: "snapshot"
   };
 }
+function organizerRaceSnapshotOpen(){
+  return new Promise((resolve,reject)=>{
+    try{
+      const req=indexedDB.open(ORGANIZER_RACE_SNAPSHOT_DB,1);
+      req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(ORGANIZER_RACE_SNAPSHOT_STORE))req.result.createObjectStore(ORGANIZER_RACE_SNAPSHOT_STORE,{keyPath:"id"});};
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error||new Error("No se pudo abrir el archivo de seguimiento"));
+    }catch(error){reject(error)}
+  });
+}
+async function organizerRaceSnapshotPut(eventKey,runId,participants){
+  if(!eventKey||!runId)return;
+  const dbx=await organizerRaceSnapshotOpen();
+  try{
+    const tx=dbx.transaction(ORGANIZER_RACE_SNAPSHOT_STORE,"readwrite");
+    tx.objectStore(ORGANIZER_RACE_SNAPSHOT_STORE).put({id:`${eventKey}:${runId}`,eventKey,runId,status:organizerRunStatus||"active",savedAt:nowIso(),participants:participants&&typeof participants==="object"?participants:{}});
+    await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error("No se pudo guardar el seguimiento"));tx.onabort=()=>reject(tx.error||new Error("Se canceló el guardado del seguimiento"));});
+  }finally{try{dbx.close()}catch(_){}}
+}
+async function organizerRaceSnapshotLoad(eventKey,runId){
+  if(!eventKey||!runId)return null;
+  const dbx=await organizerRaceSnapshotOpen();
+  try{return await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_RACE_SNAPSHOT_STORE,"readonly");const req=tx.objectStore(ORGANIZER_RACE_SNAPSHOT_STORE).get(`${eventKey}:${runId}`);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error||new Error("No se pudo recuperar el seguimiento"));});}
+  finally{try{dbx.close()}catch(_){}}
+}
+async function organizerRaceSnapshotDelete(eventKey,runId){
+  if(!eventKey||!runId)return;
+  const dbx=await organizerRaceSnapshotOpen();
+  try{await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_RACE_SNAPSHOT_STORE,"readwrite");tx.objectStore(ORGANIZER_RACE_SNAPSHOT_STORE).delete(`${eventKey}:${runId}`);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
+  finally{try{dbx.close()}catch(_){}}
+}
+function clearOrganizerParticipantsSnapshot(eventKey,runId){
+  const key=organizerSnapshotStorageKey(eventKey,runId);if(!key)return;
+  try{localStorage.removeItem(key)}catch(_){ }
+  organizerRaceSnapshotDelete(String(eventKey||""),String(runId||"")).catch(()=>{});
+}
+
 function writeOrganizerParticipantsSnapshot(rows, eventKey = organizerEventKey, runId = organizerRunId) {
   const key = organizerSnapshotStorageKey(eventKey, runId);
   if (!key) return;
@@ -213,6 +252,7 @@ function writeOrganizerParticipantsSnapshot(rows, eventKey = organizerEventKey, 
       participants[mapKey] = mergeOrganizerParticipantRecords(participants[mapKey]||{},slimOrganizerParticipant(row));
     });
     localStorage.setItem(key, JSON.stringify({ savedAt: nowIso(), participants }));
+    organizerRaceSnapshotPut(String(eventKey||""),String(runId||""),participants).catch(error=>console.warn("MILITOPO LIVE · copia IndexedDB",error));
   } catch (error) {
     console.warn("MILITOPO LIVE · snapshot local", error);
     setMessage("No se pudo guardar la copia local del seguimiento en vivo. Revisa el almacenamiento del navegador.", "warn");
@@ -303,6 +343,11 @@ function buildOrganizerPanel() {
       <button id="live2StartRunBtn" class="militopo-live2-start" type="button" disabled>▶ INICIAR CARRERA EN VIVO</button>
       <button id="live2StopRunBtn" class="militopo-live2-stop" type="button" disabled>■ CERRAR CARRERA EN VIVO</button>
     </div>
+    <div class="militopo-live2-actions militopo-live2-danger-actions">
+      <button id="live2DeleteRaceBtn" class="militopo-live2-stop" type="button">🧹 BORRAR DATOS DE ESTA CARRERA</button>
+      <button id="live2DeleteExerciseBtn" class="militopo-live2-stop" type="button">🗑️ BORRAR EJERCICIO COMPLETO</button>
+    </div>
+    <div class="militopo-live2-message is-ok">🔒 Protección activa: una vez iniciada la carrera, MILITOPO conserva estados, resultados y tracks hasta que uses uno de los botones de borrado.</div>
     <div class="militopo-live2-metrics">
       <div class="militopo-live2-metric"><strong id="live2Total">0</strong><span>PARTICIPANTES</span></div>
       <div class="militopo-live2-metric"><strong id="live2Pending">0</strong><span>SIN SALIR</span></div>
@@ -327,6 +372,8 @@ function buildOrganizerPanel() {
   else step5.prepend(panel);
   $("live2StartRunBtn")?.addEventListener("click", startOrganizerRun);
   $("live2StopRunBtn")?.addEventListener("click", stopOrganizerRun);
+  $("live2DeleteRaceBtn")?.addEventListener("click", ()=>deleteOrganizerRaceData());
+  $("live2DeleteExerciseBtn")?.addEventListener("click", deleteOrganizerExerciseCompletely);
   bindOrganizerSortHeaders(panel);
   if (!organizerClockTimer) organizerClockTimer = window.setInterval(refreshOrganizerTimeCells, 1000);
 }
@@ -428,7 +475,9 @@ async function processFinishedResults(rows){
     const usableTrack=Array.isArray(participant?.track)&&participant.track.length?participant.track:(Array.isArray(hydratedTrack)?hydratedTrack:[]);
     const expectedTrackCount=Math.max(0,Number(participant?.trackPointCount)||0);
     const receivedTrackCount=usableTrack.length;
-    if(expectedTrackCount>0&&(participant?.trackComplete!==true||receivedTrackCount<expectedTrackCount))continue;
+    // El resultado final se importa en cuanto llega. El track puede completar su
+    // transferencia después y se adjuntará sin bloquear clasificación ni Paso 6.
+    const trackForImport=expectedTrackCount>0&&participant?.trackComplete===true&&receivedTrackCount>=expectedTrackCount?usableTrack:[];
     const fingerprint=resultFingerprint(resultCode);
     const busyKey=`${pid}:${fingerprint}`;
     if(organizerAutoImportBusy.has(busyKey))continue;
@@ -438,8 +487,8 @@ async function processFinishedResults(rows){
       const result=window.MILITOPO_LIVE_IMPORT_RESULT(resultCode,{
         runId:organizerRunId,
         receivedAt:participant?.finishTime||nowIso(),
-        track:usableTrack,
-        trackPointCount:Number(participant?.trackPointCount)||0
+        track:trackForImport,
+        trackPointCount:trackForImport.length||Number(participant?.trackPointCount)||0
       });
       if(result?.ok){
         importedMap[pid]=fingerprint;
@@ -496,6 +545,14 @@ async function organizerTrackVaultLoadRun(eventKey,runId){
   try{dbx.close()}catch(_){}
   return rows.filter(row=>row.eventKey===eventKey&&row.runId===runId);
 }
+async function organizerTrackVaultDeleteRun(eventKey,runId){
+  const dbx=await organizerTrackVaultOpen();
+  try{
+    const rows=await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_TRACK_VAULT_STORE,"readonly");const req=tx.objectStore(ORGANIZER_TRACK_VAULT_STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});
+    await new Promise((resolve,reject)=>{const tx=dbx.transaction(ORGANIZER_TRACK_VAULT_STORE,"readwrite");const store=tx.objectStore(ORGANIZER_TRACK_VAULT_STORE);rows.filter(row=>row.eventKey===eventKey&&row.runId===runId).forEach(row=>store.delete(row.id));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});
+  }finally{try{dbx.close()}catch(_){}}
+}
+
 async function hydrateOrganizerTrack(participant){
   const pid=String(participant?.participantId||"");
   const expected=Math.max(0,Number(participant?.trackPointCount)||0);
@@ -845,6 +902,7 @@ function renderOrganizerParticipants(participantsValue) {
   const participants = mergeOrganizerParticipantsWithContext(organizerLatestParticipantsValue);
   const rows = applyOrganizerColumnSort(sortOrganizerParticipants(participants));
   organizerLatestRows = rows;
+  if(organizerRunId)try{window.MILITOPO_TOUCH_RACE_DATA?.({runId:organizerRunId,status:organizerRunStatus||"active",lastDataAt:nowIso()})}catch(_){}
   const allReceivedRows=Object.values(organizerLatestParticipantsValue||{}).filter(value=>value&&typeof value==="object");
   // La copia local conserva también participantes temporalmente descartados. Solo
   // se filtran al pintar la tabla; sus últimos resultados/metadatos no se destruyen.
@@ -962,6 +1020,10 @@ function updateOrganizerButtons() {
   const progress=organizerProgressSummary();
   const start = $("live2StartRunBtn");
   const stop = $("live2StopRunBtn");
+  const delRace = $("live2DeleteRaceBtn");
+  const delExercise = $("live2DeleteExerciseBtn");
+  if(delRace)delRace.disabled=organizerRunActionBusy||!hasRun;
+  if(delExercise)delExercise.disabled=organizerRunActionBusy;
   if(start){
     start.disabled=!ready||organizerRunActionBusy||hasRun;
     start.textContent=organizerRunActionBusy?"PROCESANDO…":organizerRunStatus==="archived"?"✓ CARRERA ARCHIVADA · DATOS CONSERVADOS":active?"CARRERA EN VIVO YA INICIADA":"▶ INICIAR CARRERA EN VIVO";
@@ -1016,10 +1078,15 @@ async function attachOrganizerRun(eventKey, runId, meta = null) {
   const ctx=organizerContext()||{};
   if($("live2RunText"))$("live2RunText").innerHTML=`Ejercicio: <b>${safeText(ctx.eventName||meta?.eventName||"ORIENTACIÓN")}</b><br>Sesión: <b>${safeText(nextRunId)}</b><br>Estado: <b>${archived?"ARCHIVADA · DATOS CONSERVADOS":closing?"RECEPCIÓN DE LLEGADAS Y ENVÍOS":"EN CURSO"}</b>`;
   try{localStorage.setItem(ORGANIZER_RUN_KEY_PREFIX+nextEventKey,nextRunId);}catch(_){}
+  try{window.MILITOPO_PROTECT_RACE_DATA?.({runId:nextRunId,status:organizerRunStatus||"active",startedAt:meta?.startedAtClient||nowIso()})}catch(_){}
 
   if(!sameRun){
     cleanupOrganizerRunListener();
-    organizerLatestParticipantsValue=readOrganizerParticipantsSnapshot(nextEventKey,nextRunId);
+    const durableSnapshot=await organizerRaceSnapshotLoad(nextEventKey,nextRunId).catch(()=>null);
+    organizerLatestParticipantsValue=mergeOrganizerParticipantMaps(
+      readOrganizerParticipantsSnapshot(nextEventKey,nextRunId),
+      durableSnapshot?.participants||{}
+    );
     if(Object.keys(organizerLatestParticipantsValue).length){
       renderOrganizerParticipants(organizerLatestParticipantsValue);
       setMessage("Recuperando datos locales de la carrera mientras sincroniza la nube…","warn");
@@ -1057,7 +1124,7 @@ async function bindOrganizerEvent(ctx) {
   organizerEventKey = eventKey;
   organizerRunId = "";
   try{
-    const rememberedRunId=String(localStorage.getItem(ORGANIZER_RUN_KEY_PREFIX+eventKey)||"").trim();
+    const rememberedRunId=String(localStorage.getItem(ORGANIZER_RUN_KEY_PREFIX+eventKey)||ctx?.liveRunId||"").trim();
     if(rememberedRunId){
       attachOrganizerRun(eventKey,rememberedRunId,{status:"closing",eventName:ctx?.eventName||"ORIENTACIÓN"});
       setMessage("Recuperando la última carrera guardada en este dispositivo…","warn");
@@ -1148,7 +1215,8 @@ async function startOrganizerRun() {
       startedAtClient:nowIso()
     });
     await attachOrganizerRun(eventKey,runId,{status:"active",eventName:ctx.eventName});
-    setMessage(`Carrera iniciada con ${Object.keys(participants).length} participantes preparados. El botón queda bloqueado para evitar sesiones duplicadas.`,"ok");
+    try{window.MILITOPO_PROTECT_RACE_DATA?.({runId,status:"active",startedAt:nowIso()})}catch(_){}
+    setMessage(`Carrera iniciada con ${Object.keys(participants).length} participantes preparados. Los datos quedan protegidos hasta borrado explícito.`,"ok");
   }catch(error){
     console.error("MILITOPO LIVE · iniciar carrera",error);
     setMessage(`No se pudo iniciar la carrera: ${error.message}`,"error");
@@ -1177,6 +1245,7 @@ async function archiveOrganizerRun({forced=false}={}) {
     archivedAt:serverTimestamp(),
     archivedAtClient:nowIso()
   });
+  try{window.MILITOPO_TOUCH_RACE_DATA?.({runId:organizerRunId,status:"archived",lastDataAt:nowIso()})}catch(_){}
   setBadge("live2RunBadge","CARRERA · ARCHIVADA","neutral");
   setMessage(forced
     ?`Carrera archivada de forma forzada. Quedan ${progress.awaitingArrival.length} llegadas y ${progress.awaitingDelivery.length} envíos pendientes; la sesión conserva la tabla y seguirá aceptando datos tardíos.`
@@ -1240,6 +1309,56 @@ async function stopOrganizerRun() {
     updateOrganizerButtons();
   }
 }
+
+async function deleteOrganizerRaceData(options={}){
+  const skipConfirm=options?.skipConfirm===true;
+  const eventKey=String(organizerEventKey||safeFirebaseKey(organizerContext()?.eventId||""));
+  const runId=String(organizerRunId||organizerContext()?.liveRunId||"");
+  if(!eventKey){setMessage("No hay un ejercicio identificado para borrar.","warn");return false;}
+  if(!skipConfirm){
+    if(!window.confirm("Esta acción BORRA los datos recopilados de la carrera actual: estados, resultados, tiempos y tracks. El diseño del ejercicio y los recorridos se conservarán.\n\n¿Continuar?"))return false;
+    if(!window.confirm("Confirmación de seguridad: ¿borrar definitivamente los datos de ESTA CARRERA?"))return false;
+  }
+  if(runId && (!db||!currentUser||!firebaseConnected)){
+    setMessage("Para borrar una carrera que ya se sincronizó debes tener conexión. Así evitamos que una copia de Firebase reaparezca después.","error");
+    return false;
+  }
+  organizerRunActionBusy=true;updateOrganizerButtons();
+  try{
+    if(runId&&db){
+      const activeSnap=await get(ref(db,activeRunPath(eventKey))).catch(()=>null);
+      if(String(activeSnap?.val()?.runId||"")===runId)await set(ref(db,activeRunPath(eventKey)),null);
+      await set(ref(db,runPath(eventKey,runId)),null);
+    }
+    if(runId){
+      clearOrganizerParticipantsSnapshot(eventKey,runId);
+      await organizerRaceSnapshotDelete(eventKey,runId).catch(()=>{});
+      await organizerTrackVaultDeleteRun(eventKey,runId).catch(()=>{});
+      try{localStorage.removeItem(`${AUTO_IMPORT_KEY_PREFIX}${eventKey}_${runId}`)}catch(_){ }
+      [...organizerTrackMemory.keys()].filter(key=>key.startsWith(`${eventKey}:${runId}:`)).forEach(key=>organizerTrackMemory.delete(key));
+    }
+    try{localStorage.removeItem(ORGANIZER_RUN_KEY_PREFIX+eventKey)}catch(_){ }
+    organizerLatestParticipantsValue={};organizerLatestRows=[];organizerAutoImportedCount=0;organizerAutoImportBusy.clear();
+    cleanupOrganizerRunListener();organizerRunId="";organizerRunStatus="";organizerLocalRecoveryKey="";
+    try{window.MILITOPO_CLEAR_RACE_RUNTIME_STATE?.()}catch(_){ }
+    renderOrganizerParticipants({});
+    setBadge("live2RunBadge","CARRERA · NO INICIADA","neutral");
+    setMessage("Datos de la carrera borrados de forma explícita. El ejercicio y sus recorridos se conservan.","ok");
+    return true;
+  }catch(error){console.error("MILITOPO LIVE · borrar carrera",error);setMessage(`No se pudieron borrar los datos: ${error.message}`,"error");return false}
+  finally{organizerRunActionBusy=false;updateOrganizerButtons()}
+}
+async function deleteOrganizerExerciseCompletely(){
+  if(!window.confirm("BORRAR EJERCICIO COMPLETO eliminará configuración, recorridos y todos los datos de la carrera actual.\n\n¿Quieres continuar?"))return false;
+  const runId=String(organizerRunId||organizerContext()?.liveRunId||"");
+  if(runId){const ok=await deleteOrganizerRaceData({skipConfirm:true});if(!ok)return false;}
+  window.__militopoDeleteExerciseInProgress=true;
+  try{if(typeof window.resetSavedEvent==="function")window.resetSavedEvent();else if(typeof resetSavedEvent==="function")resetSavedEvent();}
+  finally{setTimeout(()=>{window.__militopoDeleteExerciseInProgress=false},0)}
+  return true;
+}
+window.MILITOPO_LIVE_DELETE_RACE_DATA=deleteOrganizerRaceData;
+window.MILITOPO_LIVE_DELETE_EXERCISE=deleteOrganizerExerciseCompletely;
 
 async function resetOrganizerEventForReusableExercise(eventId) {
   const eventKey=safeFirebaseKey(eventId||organizerEventKey||"");
@@ -1310,6 +1429,7 @@ async function recoverOrganizerRunFromLocalDevice(ctx){
   const eventKey=safeFirebaseKey(eventId);
   let runId="";
   try{runId=String(localStorage.getItem(ORGANIZER_RUN_KEY_PREFIX+eventKey)||"").trim()}catch(_){ }
+  if(!runId)runId=String(ctx?.liveRunId||"").trim();
   if(!runId)return;
   const recoveryKey=`${eventKey}:${runId}`;
   if(organizerLocalRecoveryKey===recoveryKey)return;
@@ -1318,7 +1438,11 @@ async function recoverOrganizerRunFromLocalDevice(ctx){
     organizerEventKey=eventKey;
     organizerRunId=runId;
     if(!organizerRunStatus)organizerRunStatus="closing";
-    organizerLatestParticipantsValue=mergeOrganizerParticipantMaps(readOrganizerParticipantsSnapshot(eventKey,runId),organizerLatestParticipantsValue||{});
+    const durableSnapshot=await organizerRaceSnapshotLoad(eventKey,runId).catch(()=>null);
+    organizerLatestParticipantsValue=mergeOrganizerParticipantMaps(
+      mergeOrganizerParticipantMaps(readOrganizerParticipantsSnapshot(eventKey,runId),durableSnapshot?.participants||{}),
+      organizerLatestParticipantsValue||{}
+    );
     renderOrganizerParticipants(organizerLatestParticipantsValue);
     const rows=await organizerTrackVaultLoadRun(eventKey,runId);
     rows.forEach(row=>{
