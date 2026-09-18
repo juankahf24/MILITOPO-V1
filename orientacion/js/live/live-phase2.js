@@ -44,6 +44,7 @@ const ROOT_PATH = "militopoLive/v2";
 const QUEUE_KEY = "militopo_v1_live_v2_pending_events";
 const PARTICIPANT_CONTEXT_KEY = "militopo_v1_live_v2_participant_context";
 const ORGANIZER_RUN_KEY_PREFIX = "militopo_v1_live_v2_organizer_run_";
+const ORGANIZER_RUN_SNAPSHOT_KEY_PREFIX = "militopo_v1_live_v2_organizer_snapshot_";
 const AUTO_IMPORT_KEY_PREFIX = "militopo_v1_live_v2_auto_import_";
 const PARTICIPANT_LAST_SYNC_KEY_PREFIX = "militopo_v1_live_v2_last_sync_";
 const TRACK_OUTBOX_DB = "MILITOPO_V1_LIVE_TRACK_OUTBOX_V1";
@@ -160,6 +161,80 @@ function confirmParticipantSync(value = nowIso()) {
   participantLastSyncIdentity = key;
   participantLastSyncAt = String(value || nowIso());
   try { localStorage.setItem(key, participantLastSyncAt); } catch (_) {}
+}
+
+function organizerSnapshotStorageKey(eventKey, runId = organizerRunId) {
+  const rawEvent = String(eventKey || organizerEventKey || "").trim();
+  const rawRun = String(runId || "").trim();
+  if (!rawEvent || !rawRun) return "";
+  const safeEvent = safeFirebaseKey(rawEvent);
+  const safeRun = safeFirebaseKey(rawRun);
+  return `${ORGANIZER_RUN_SNAPSHOT_KEY_PREFIX}${safeEvent}:${safeRun}`;
+}
+function slimOrganizerParticipant(row) {
+  const source = row && typeof row === "object" ? row : {};
+  return {
+    participantId: String(source.participantId || ""),
+    participantName: String(source.participantName || ""),
+    routeId: String(source.routeId || ""),
+    status: String(source.status || "not_started"),
+    totalControls: Math.max(0, Number(source.totalControls) || 0),
+    completedControls: Math.max(0, Number(source.completedControls) || 0),
+    discardedControls: Math.max(0, Number(source.discardedControls) || 0),
+    pendingControls: Math.max(0, Number(source.pendingControls) || 0),
+    startTime: source.startTime || null,
+    finishTime: source.finishTime || null,
+    resultImported: source.resultImported === true,
+    resultReceivedClient: source.resultReceivedClient === true,
+    resultCode: String(source.resultCode || ""),
+    resultImportStatus: String(source.resultImportStatus || ""),
+    trackComplete: source.trackComplete === true,
+    trackReceivedClient: source.trackReceivedClient === true,
+    trackPointCount: Math.max(0, Number(source.trackPointCount) || 0),
+    trackDigest: String(source.trackDigest || ""),
+    trackTransferId: String(source.trackTransferId || ""),
+    online: source.online !== false,
+    lastSeen: source.lastSeen || null,
+    lastSeenClient: source.lastSeenClient || null,
+    source: "snapshot"
+  };
+}
+function writeOrganizerParticipantsSnapshot(rows, eventKey = organizerEventKey, runId = organizerRunId) {
+  const key = organizerSnapshotStorageKey(eventKey, runId);
+  if (!key) return;
+  try {
+    const list = Array.isArray(rows) ? rows : [];
+    const participants = {};
+    list.forEach((row, index) => {
+      const pid = String(row?.participantId || index);
+      participants[safeFirebaseKey(pid)] = slimOrganizerParticipant(row);
+    });
+    localStorage.setItem(key, JSON.stringify({ savedAt: nowIso(), participants }));
+  } catch (error) {
+    console.warn("MILITOPO LIVE · snapshot local", error);
+    setMessage("No se pudo guardar la copia local del seguimiento en vivo. Revisa el almacenamiento del navegador.", "warn");
+  }
+}
+function readOrganizerParticipantsSnapshot(eventKey = organizerEventKey, runId = organizerRunId) {
+  const key = organizerSnapshotStorageKey(eventKey, runId);
+  if (!key) return {};
+  try {
+    const payload = JSON.parse(localStorage.getItem(key) || "null");
+    if (!payload || typeof payload !== "object") return {};
+    return payload.participants && typeof payload.participants === "object" ? payload.participants : {};
+  } catch (_) {
+    return {};
+  }
+}
+function clearOrganizerParticipantsSnapshotsForEvent(eventKey) {
+  const rawEvent = String(eventKey || organizerEventKey || "").trim();
+  if (!rawEvent) return;
+  const safeEvent = safeFirebaseKey(rawEvent);
+  const prefix = `${ORGANIZER_RUN_SNAPSHOT_KEY_PREFIX}${safeEvent}:`;
+  try {
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => { if (key.startsWith(prefix)) localStorage.removeItem(key); });
+  } catch (_) {}
 }
 
 function isParticipantAccess() {
@@ -604,10 +679,72 @@ function bindOrganizerSortHeaders(panel) {
   updateOrganizerSortHeaders();
 }
 
+function organizerStatusRank(status) {
+  return ({ finished:4, racing:3, ready:2, not_started:1, offline:0 })[String(status || "")] ?? 0;
+}
+function newerLiveTimestamp(a, b) {
+  const aMs = Date.parse(String(a || ""));
+  const bMs = Date.parse(String(b || ""));
+  if (!Number.isFinite(aMs)) return b || "";
+  if (!Number.isFinite(bMs)) return a || "";
+  return aMs >= bMs ? a : b;
+}
+function mergeOrganizerParticipantRecords(baseRecord, incomingRecord) {
+  const base = baseRecord && typeof baseRecord === "object" ? baseRecord : {};
+  const incoming = incomingRecord && typeof incomingRecord === "object" ? incomingRecord : {};
+  const merged = { ...base, ...incoming };
+  merged.participantId = String(incoming.participantId || base.participantId || "");
+  merged.participantName = String(incoming.participantName || base.participantName || "").trim();
+  merged.routeId = String(incoming.routeId || base.routeId || "");
+  merged.totalControls = Math.max(0, Number(incoming.totalControls) || 0, Number(base.totalControls) || 0);
+  merged.completedControls = Math.max(0, Number(incoming.completedControls) || 0, Number(base.completedControls) || 0);
+  merged.discardedControls = Math.max(0, Number(incoming.discardedControls) || 0, Number(base.discardedControls) || 0);
+  merged.pendingControls = Math.max(0, Number(incoming.pendingControls) || 0, Number(base.pendingControls) || 0);
+  merged.status = organizerStatusRank(incoming.status) >= organizerStatusRank(base.status)
+    ? String(incoming.status || "not_started")
+    : String(base.status || "not_started");
+  merged.startTime = incoming.startTime || base.startTime || null;
+  merged.finishTime = incoming.finishTime || base.finishTime || null;
+  merged.resultImported = incoming.resultImported === true || base.resultImported === true;
+  merged.resultReceivedClient = incoming.resultReceivedClient === true || base.resultReceivedClient === true;
+  merged.resultCode = String(incoming.resultCode || base.resultCode || "");
+  merged.resultImportStatus = String(incoming.resultImportStatus || base.resultImportStatus || "");
+  merged.trackComplete = incoming.trackComplete === true || base.trackComplete === true;
+  merged.trackReceivedClient = incoming.trackReceivedClient === true || base.trackReceivedClient === true;
+  merged.trackPointCount = Math.max(0, Number(incoming.trackPointCount) || 0, Number(base.trackPointCount) || 0);
+  merged.trackDigest = String(incoming.trackDigest || base.trackDigest || "");
+  merged.trackTransferId = String(incoming.trackTransferId || base.trackTransferId || "");
+  merged.online = incoming.online === false ? false : (incoming.online === true ? true : base.online !== false);
+  merged.lastSeen = newerLiveTimestamp(incoming.lastSeen, base.lastSeen) || null;
+  merged.lastSeenClient = newerLiveTimestamp(incoming.lastSeenClient, base.lastSeenClient) || null;
+  return merged;
+}
+function mergeOrganizerParticipantMaps(baseMap, incomingMap) {
+  const base = baseMap && typeof baseMap === "object" ? baseMap : {};
+  const incoming = incomingMap && typeof incomingMap === "object" ? incomingMap : {};
+  const merged = {};
+  const byPid = new Map();
+  Object.entries(base).forEach(([key, value]) => {
+    const pid = String(value?.participantId || key || "");
+    const mapKey = safeFirebaseKey(pid || key);
+    byPid.set(mapKey, mergeOrganizerParticipantRecords({}, value));
+  });
+  Object.entries(incoming).forEach(([key, value]) => {
+    const pid = String(value?.participantId || key || "");
+    const mapKey = safeFirebaseKey(pid || key);
+    const previous = byPid.get(mapKey) || {};
+    byPid.set(mapKey, mergeOrganizerParticipantRecords(previous, value));
+  });
+  byPid.forEach((value, key) => { merged[key] = value; });
+  return merged;
+}
+
 function mergeOrganizerParticipantsWithContext(participantsValue) {
   const remote=participantsValue&&typeof participantsValue==="object"?participantsValue:{};
+  const snapshot=readOrganizerParticipantsSnapshot();
+  const combined=mergeOrganizerParticipantMaps(snapshot,remote);
   const merged={};
-  Object.entries(remote).forEach(([key,value])=>{merged[key]={...(value||{})};});
+  Object.entries(combined).forEach(([key,value])=>{merged[key]={...(value||{})};});
   const routes=Array.isArray(organizerContext()?.routes)?organizerContext().routes:[];
   routes.forEach(route=>{
     const pid=String(route?.participantId||"").trim();
@@ -669,6 +806,7 @@ function renderOrganizerParticipants(participantsValue) {
   const participants = mergeOrganizerParticipantsWithContext(organizerLatestParticipantsValue);
   const rows = applyOrganizerColumnSort(sortOrganizerParticipants(participants));
   organizerLatestRows = rows;
+  if(organizerEventKey && organizerRunId) writeOrganizerParticipantsSnapshot(rows);
   rows.forEach(p=>{
     if(!Array.isArray(p?.track)||!p.track.length)return;
     const digest=stableTrackDigest(p.track);
@@ -678,7 +816,12 @@ function renderOrganizerParticipants(participantsValue) {
   const counts = { total: rows.length, pending:0, racing:0, finished:0 };
   rows.forEach(p => {
     if (typeof window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS === "function") {
-      window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS(p.participantId, p.status);
+      window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS(p.participantId, p.status, {
+        resultImported: organizerResultIsReceived(p),
+        resultCode: String(p?.resultCode || ""),
+        startTime: p?.startTime || null,
+        finishTime: p?.finishTime || null
+      });
     }
     if (p.status === "racing") counts.racing++;
     else if (p.status === "finished") counts.finished++;
@@ -822,10 +965,14 @@ async function attachOrganizerRun(eventKey, runId, meta = null) {
 
   if(!sameRun){
     cleanupOrganizerRunListener();
-    organizerLatestParticipantsValue={};
+    organizerLatestParticipantsValue=readOrganizerParticipantsSnapshot(nextEventKey,nextRunId);
+    if(Object.keys(organizerLatestParticipantsValue).length){
+      renderOrganizerParticipants(organizerLatestParticipantsValue);
+      setMessage("Recuperando datos locales de la carrera mientras sincroniza la nube…","warn");
+    }
     organizerLatestRows=[];
     organizerUnsubParticipants=onValue(ref(db,`${runPath(nextEventKey,nextRunId)}/participants`),snap=>{
-      organizerLatestParticipantsValue=snap.val()||{};
+      organizerLatestParticipantsValue=mergeOrganizerParticipantMaps(organizerLatestParticipantsValue,snap.val()||{});
       renderOrganizerParticipants(organizerLatestParticipantsValue);
     },error=>setMessage(`No se pudo leer el progreso: ${error.message}`,"error"));
     organizerTrackVaultLoadRun(nextEventKey,nextRunId).then(rows=>{
@@ -855,6 +1002,13 @@ async function bindOrganizerEvent(ctx) {
   cleanupOrganizerRunListener();
   organizerEventKey = eventKey;
   organizerRunId = "";
+  try{
+    const rememberedRunId=String(localStorage.getItem(ORGANIZER_RUN_KEY_PREFIX+eventKey)||"").trim();
+    if(rememberedRunId){
+      attachOrganizerRun(eventKey,rememberedRunId,{status:"closing",eventName:ctx?.eventName||"ORIENTACIÓN"});
+      setMessage("Recuperando la última carrera guardada en este dispositivo…","warn");
+    }
+  }catch(_){}
   organizerUnsubActive = onValue(ref(db, activeRunPath(eventKey)), snap => {
     const active = snap.val();
     if (active && (active.status === "active" || active.status === "closing" || active.status === "archived") && active.runId) attachOrganizerRun(eventKey, String(active.runId), active);
@@ -1071,6 +1225,7 @@ async function resetOrganizerEventForReusableExercise(eventId) {
     await set(ref(db,activeRunPath(eventKey)),null);
     try{localStorage.removeItem(ORGANIZER_RUN_KEY_PREFIX+eventKey);}catch(_){}
     try{localStorage.removeItem(autoImportStorageKey());}catch(_){}
+    clearOrganizerParticipantsSnapshotsForEvent(eventKey);
     organizerAutoImportedCount=0;
     organizerLatestRows=[];
     organizerLatestParticipantsValue={};
