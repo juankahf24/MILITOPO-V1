@@ -615,7 +615,7 @@ body.ori-page-booting,body.ori-page-booting .app{opacity:1!important;-webkit-tra
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="js/vendor/qr.js?v=modular-fase2"></script>
-<script src="js/app.js?v=v75-persistencia-carrera-20260918"></script>
+<script src="js/app.js?v=v76-arranque-orientacion-20260918"></script>
 <script type="module" src="js/live/live-phase2.js?v=v75-persistencia-carrera-20260918"></script>
 <script>
 window.addEventListener("load",function(){
@@ -628,7 +628,7 @@ window.addEventListener("load",function(){
   if (!("serviceWorker" in navigator) || !("caches" in window) || !/^https?:$/.test(location.protocol)) return;
   async function cacheCurrentMilitopoPage(){
     try {
-      const cache = await caches.open("militopo-v1-page-snapshot-v75-persistencia-carrera-20260918");
+      const cache = await caches.open("militopo-v1-page-snapshot-v76-arranque-orientacion-20260918");
       await cache.add(new Request(location.href, { cache: "reload" })).catch(function(){});
       await Promise.allSettled(["./", "./index.html", "./js/app.js", "./js/live/live-phase2.js", "./js/config/iof-symbols-baked.js", "./js/config/plan-assets.js", "./js/core/app-main.js", "./js/pdf/pdf-professional.js", "./js/results/results-v16.js", "./js/results/results-classification-fix.js", "./css/styles.css", "./js/vendor/qr.js", "./maps/index.json"].map(function(url){
         return cache.add(new Request(url, { cache: "reload" }));
