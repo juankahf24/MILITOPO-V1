@@ -1,4 +1,4 @@
-/* MILITOPO LIVE · V72 panel en vivo coherente y recuperable
+/* MILITOPO LIVE · V73 panel en vivo coherente y recuperable
    Sincronización automática de salida, controles, llegada y resultado.
    El organizador recibe e importa el ORI|RESULT sin escanearlo.
    El QR final y el código manual permanecen como respaldo. */
