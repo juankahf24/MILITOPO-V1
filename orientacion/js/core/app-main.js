@@ -48,50 +48,66 @@ function resetStateToFreshEvent(){
     return freshId;
 }
 
-async function init(){
-    setupReusableExerciseImporter();
-    fillSelect("participantCount",1,100,10,n=>`${n} participantes`);
-    fillSelect("maxUniqueRoutes",1,30,15,n=>`${n} recorridos únicos máx.`);
-    fillSelect("controlCount",3,80,25,n=>`${n} balizas`);
-    fillSelect("controlsPerRoute",2,30,8,n=>`${n} balizas`);
-    fillSelect("maxControlReuse",1,100,6,n=>`${n} usos máx.`);
-
-    state.eventId=createFreshEventId();
-    document.getElementById("eventId").value=state.eventId;
-    loadCustomIofSymbols();
-
-    let restoreInfo=loadState();
+let __militopoOrientationInitialized=false;
+function init(){
+    if(__militopoOrientationInitialized)return;
+    __militopoOrientationInitialized=true;
     try{
-        const durableInfo=await restoreDurableOrganizerState(restoreInfo);
-        if(durableInfo&&durableInfo.restored)restoreInfo=durableInfo;
-    }catch(error){console.warn("No se pudo consultar la copia duradera del ejercicio",error)}
-    const restored=!!(restoreInfo&&restoreInfo.restored);
-    const restoredStep=normalizeAppStep((restoreInfo&&restoreInfo.step)||1);
+        setupReusableExerciseImporter();
+        fillSelect("participantCount",1,100,10,n=>`${n} participantes`);
+        fillSelect("maxUniqueRoutes",1,30,15,n=>`${n} recorridos únicos máx.`);
+        fillSelect("controlCount",3,80,25,n=>`${n} balizas`);
+        fillSelect("controlsPerRoute",2,30,8,n=>`${n} balizas`);
+        fillSelect("maxControlReuse",1,100,6,n=>`${n} usos máx.`);
 
-    syncConfigToUi();
-    rebuildPointsFromConfig(true);
-    currentAppStep=restoredStep;
+        state.eventId=createFreshEventId();
+        const eventIdInput=document.getElementById("eventId");
+        if(eventIdInput)eventIdInput.value=state.eventId;
+        loadCustomIofSymbols();
 
-    renderPointSelectors();
-    renderPointsTable();
-    renderIofDescriptionsEditor();
-    updateParticipantSelect();
-    updateRouteCountInfo();
-    bindStepTabs();
-    bindStrongAutosave();
-    cleanupStep2ImportAndTableUi();
+        const restoreInfo=loadState();
+        const restored=!!(restoreInfo&&restoreInfo.restored);
+        const restoredStep=normalizeAppStep((restoreInfo&&restoreInfo.step)||1);
 
-    goStep(restoredStep,{silent:true,noScroll:true});
+        syncConfigToUi();
+        rebuildPointsFromConfig(true);
+        currentAppStep=restoredStep;
 
-    setTimeout(()=>{
-        initMap();
-        restoreOrientationGeoTiffFromDb().finally(()=>goStep(restoredStep,{silent:true,noScroll:true}));
-        const msg=restored
-            ? `✅ Evento restaurado · paso ${restoredStep} · origen: ${restoreInfo.reason}`
-            : `ℹ️ No había evento guardado completo · paso inicial ${restoredStep} · origen: ${restoreInfo.reason}`;
-        setRestoreStatus(msg,restored?"ok":"warn");
-        if(restored){toast(`Evento restaurado · paso ${restoredStep}`);setTimeout(()=>toast(`Evento restaurado · paso ${restoredStep}`),700);}
-    },250);
+        renderPointSelectors();
+        renderPointsTable();
+        renderIofDescriptionsEditor();
+        updateParticipantSelect();
+        updateRouteCountInfo();
+        bindStepTabs();
+        bindStrongAutosave();
+        cleanupStep2ImportAndTableUi();
+        goStep(restoredStep,{silent:true,noScroll:true});
+
+        // La copia IndexedDB es una red de seguridad, nunca debe bloquear el arranque.
+        setTimeout(()=>recoverDurableOrganizerStateAfterBoot(restoreInfo).catch(error=>console.warn("Recuperación duradera posterior al arranque",error)),600);
+        setTimeout(()=>{
+            initMapWhenReady();
+            restoreOrientationGeoTiffFromDb().finally(()=>goStep(currentAppStep,{silent:true,noScroll:true}));
+            const msg=restored
+                ? `✅ Evento restaurado · paso ${restoredStep} · origen: ${restoreInfo.reason}`
+                : `ℹ️ No había evento guardado completo · paso inicial ${restoredStep} · origen: ${restoreInfo.reason}`;
+            setRestoreStatus(msg,restored?"ok":"warn");
+            if(restored){toast(`Evento restaurado · paso ${restoredStep}`);setTimeout(()=>toast(`Evento restaurado · paso ${restoredStep}`),700);}
+        },120);
+    }catch(error){
+        __militopoOrientationInitialized=false;
+        console.error("MILITOPO Orientación · fallo de inicialización",error);
+        try{setRestoreStatus("❌ No se pudo iniciar Orientación: "+(error?.message||error),"err")}catch(_){ }
+    }
+}
+function initMapWhenReady(attempt=0){
+    if(map)return true;
+    if(typeof window.L!=="undefined"){
+        try{initMap();return true}catch(error){console.warn("Mapa todavía no disponible",error)}
+    }
+    if(attempt<80){setTimeout(()=>initMapWhenReady(attempt+1),250);return false;}
+    try{setRestoreStatus("⚠️ La interfaz está operativa, pero el mapa no pudo cargar. Comprueba la conexión y vuelve a intentarlo.","warn")}catch(_){ }
+    return false;
 }
 function fillSelect(id,min,max,selected,labelFn){const sel=document.getElementById(id);sel.innerHTML="";for(let i=min;i<=max;i++){const opt=document.createElement("option");opt.value=i;opt.textContent=labelFn?labelFn(i):i;if(i===selected)opt.selected=true;sel.appendChild(opt)}}
 function syncConfigFromUi(){state.eventName=document.getElementById("eventName").value.trim()||"ENTRENAMIENTO ORIENTACIÓN";state.participantCount=parseInt(document.getElementById("participantCount").value,10);const uniqueSel=document.getElementById("maxUniqueRoutes");state.maxUniqueRoutes=Math.max(1,parseInt(uniqueSel?uniqueSel.value:state.maxUniqueRoutes||15,10)||15);state.controlCount=parseInt(document.getElementById("controlCount").value,10);state.controlsPerRoute=parseInt(document.getElementById("controlsPerRoute").value,10);state.maxControlReuse=parseInt(document.getElementById("maxControlReuse").value,10)}function syncConfigToUi(){document.getElementById("eventName").value=state.eventName;document.getElementById("eventId").value=state.eventId;document.getElementById("participantCount").value=state.participantCount;const uniqueSel=document.getElementById("maxUniqueRoutes");if(uniqueSel)uniqueSel.value=Math.min(30,Math.max(1,state.maxUniqueRoutes||15));document.getElementById("controlCount").value=state.controlCount;document.getElementById("controlsPerRoute").value=state.controlsPerRoute;document.getElementById("maxControlReuse").value=state.maxControlReuse}
@@ -6696,7 +6712,7 @@ async function loadScriptOnce(url,globalCheck){
 
 async function ensurePlanAssets(){
     if(window.MILITOPO_PLAN_ASSETS)return window.MILITOPO_PLAN_ASSETS;
-    await loadScriptOnce(new URL("js/config/plan-assets.js?v=v75-persistencia-carrera-20260918",location.href).href,()=>window.MILITOPO_PLAN_ASSETS);
+    await loadScriptOnce(new URL("js/config/plan-assets.js?v=v76-arranque-orientacion-20260918",location.href).href,()=>window.MILITOPO_PLAN_ASSETS);
     if(!window.MILITOPO_PLAN_ASSETS)throw new Error("Recursos de plano no disponibles");
     return window.MILITOPO_PLAN_ASSETS;
 }
@@ -9473,7 +9489,15 @@ const DURABLE_ORGANIZER_EVENT_STORE="events";
 const DURABLE_ORGANIZER_TRACK_STORE="resultTracks";
 const __durableTrackSignatures=new Map();
 
+function withOrganizerTimeout(promise,ms=1800,label="operación IndexedDB"){
+    return new Promise((resolve,reject)=>{
+        let done=false;
+        const timer=setTimeout(()=>{if(done)return;done=true;reject(new Error(label+" excedió el tiempo máximo"))},ms);
+        Promise.resolve(promise).then(value=>{if(done)return;done=true;clearTimeout(timer);resolve(value)},error=>{if(done)return;done=true;clearTimeout(timer);reject(error)});
+    });
+}
 function openDurableOrganizerDb(){
+    if(typeof indexedDB==="undefined")return Promise.reject(new Error("IndexedDB no disponible"));
     return new Promise((resolve,reject)=>{
         try{
             const req=indexedDB.open(DURABLE_ORGANIZER_DB,1);
@@ -9484,6 +9508,7 @@ function openDurableOrganizerDb(){
             };
             req.onsuccess=()=>resolve(req.result);
             req.onerror=()=>reject(req.error||new Error("No se pudo abrir el archivo duradero del organizador"));
+            req.onblocked=()=>reject(new Error("IndexedDB bloqueado por otra pestaña o una versión anterior"));
         }catch(error){reject(error)}
     });
 }
@@ -9563,7 +9588,7 @@ async function deleteDurableOrganizerState(eventId){
 }
 async function restoreDurableOrganizerState(restoreInfo){
     const currentEvent=restoreInfo?.restored?String(state.eventId||""):"";
-    const durable=await readDurableOrganizerState(currentEvent);
+    const durable=await withOrganizerTimeout(readDurableOrganizerState(currentEvent),1800,"Recuperación duradera");
     if(!durable?.state)return restoreInfo;
     const localMs=Date.parse(String(restoreInfo?.savedAt||""))||0;
     const durableMs=Date.parse(String(durable.savedAt||""))||0;
@@ -9576,6 +9601,25 @@ async function restoreDurableOrganizerState(restoreInfo){
     currentAppStep=normalizeAppStep(durable.currentStep||state.currentStep||1);
     selectedIofPointId=durable.selectedIofPointId||selectedIofPointId||"START";
     return {restored:true,step:currentAppStep,reason:"indexeddb_durable",savedAt:durable.savedAt};
+}
+async function recoverDurableOrganizerStateAfterBoot(localRestoreInfo){
+    let recovered;
+    try{recovered=await restoreDurableOrganizerState(localRestoreInfo)}catch(error){console.warn("Copia duradera no disponible; se continúa con el estado local",error);return false}
+    if(!recovered?.restored||recovered.reason!=="indexeddb_durable")return false;
+    try{
+        syncConfigToUi();
+        rebuildPointsFromConfig(true);
+        renderPointSelectors();
+        renderPointsTable();
+        renderIofDescriptionsEditor();
+        updateParticipantSelect();
+        updateRouteCountInfo();
+        goStep(normalizeAppStep(recovered.step||1),{silent:true,noScroll:true});
+        if(map){renderMapMarkers();fitAllPoints()}
+        setRestoreStatus(`✅ Evento recuperado desde copia duradera · paso ${normalizeAppStep(recovered.step||1)}`,"ok");
+        toast("Evento recuperado desde copia duradera");
+        return true;
+    }catch(error){console.warn("La copia duradera se leyó pero no pudo aplicarse",error);return false}
 }
 
 function ensureRaceDataProtection(){
@@ -10515,7 +10559,9 @@ function downloadText(filename,content){const blob=new Blob([content],{type:"tex
 const __renderPointsTableBase=renderPointsTable;renderPointsTable=function(){__renderPointsTableBase();renderIofDescriptionsEditor()};
 
 
-window.addEventListener("load",init);
+function bootMilitopoOrientation(){try{init()}catch(error){console.error("MILITOPO Orientación · arranque",error)}}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bootMilitopoOrientation,{once:true});
+else setTimeout(bootMilitopoOrientation,0);
 
 
 
