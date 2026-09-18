@@ -49,6 +49,7 @@ function resetStateToFreshEvent(){
 }
 
 let __militopoOrientationInitialized=false;
+let __militopoOrganizerStateEpoch=0;
 function init(){
     if(__militopoOrientationInitialized)return;
     __militopoOrientationInitialized=true;
@@ -84,7 +85,8 @@ function init(){
         goStep(restoredStep,{silent:true,noScroll:true});
 
         // La copia IndexedDB es una red de seguridad, nunca debe bloquear el arranque.
-        setTimeout(()=>recoverDurableOrganizerStateAfterBoot(restoreInfo).catch(error=>console.warn("Recuperación duradera posterior al arranque",error)),600);
+        const bootStateEpoch=__militopoOrganizerStateEpoch;
+        setTimeout(()=>recoverDurableOrganizerStateAfterBoot(restoreInfo,bootStateEpoch).catch(error=>console.warn("Recuperación duradera posterior al arranque",error)),600);
         setTimeout(()=>{
             initMapWhenReady();
             restoreOrientationGeoTiffFromDb().finally(()=>goStep(currentAppStep,{silent:true,noScroll:true}));
@@ -2944,7 +2946,11 @@ function renderRoutes(){
     if(!grid)return;
     returnStep3MapPanelHome();
     grid.innerHTML="";
-    if(!state.routes.length)return;
+    if(!state.routes.length){
+        const routeSummary=document.getElementById("routeSummary");
+        if(routeSummary){routeSummary.className="status warn";routeSummary.textContent="Todavía no hay recorridos generados.";}
+        return;
+    }
 
     const dists=state.metrics.map(m=>Number(m.distanceKm||0));
     const climbs=state.metrics.filter(m=>m?.positiveM!=null&&Number.isFinite(Number(m.positiveM))).map(m=>Number(m.positiveM));
@@ -6712,7 +6718,7 @@ async function loadScriptOnce(url,globalCheck){
 
 async function ensurePlanAssets(){
     if(window.MILITOPO_PLAN_ASSETS)return window.MILITOPO_PLAN_ASSETS;
-    await loadScriptOnce(new URL("js/config/plan-assets.js?v=v76-arranque-orientacion-20260918",location.href).href,()=>window.MILITOPO_PLAN_ASSETS);
+    await loadScriptOnce(new URL("js/config/plan-assets.js?v=v77-reset-seguro-wakelock-20260919",location.href).href,()=>window.MILITOPO_PLAN_ASSETS);
     if(!window.MILITOPO_PLAN_ASSETS)throw new Error("Recursos de plano no disponibles");
     return window.MILITOPO_PLAN_ASSETS;
 }
@@ -9602,9 +9608,11 @@ async function restoreDurableOrganizerState(restoreInfo){
     selectedIofPointId=durable.selectedIofPointId||selectedIofPointId||"START";
     return {restored:true,step:currentAppStep,reason:"indexeddb_durable",savedAt:durable.savedAt};
 }
-async function recoverDurableOrganizerStateAfterBoot(localRestoreInfo){
+async function recoverDurableOrganizerStateAfterBoot(localRestoreInfo,expectedEpoch=__militopoOrganizerStateEpoch){
+    if(expectedEpoch!==__militopoOrganizerStateEpoch)return false;
     let recovered;
     try{recovered=await restoreDurableOrganizerState(localRestoreInfo)}catch(error){console.warn("Copia duradera no disponible; se continúa con el estado local",error);return false}
+    if(expectedEpoch!==__militopoOrganizerStateEpoch)return false;
     if(!recovered?.restored||recovered.reason!=="indexeddb_durable")return false;
     try{
         syncConfigToUi();
@@ -9626,10 +9634,32 @@ function ensureRaceDataProtection(){
     if(!state.raceDataProtection||typeof state.raceDataProtection!=="object")state.raceDataProtection={protected:false,runId:"",startedAt:"",lastDataAt:"",status:""};
     return state.raceDataProtection;
 }
+function currentExerciseHasRaceEvidence(){
+    try{
+        if(Array.isArray(state.importedResults)&&state.importedResults.length)return true;
+        if(Array.isArray(state.scanHistory)&&state.scanHistory.length)return true;
+        if(state.startTimes&&typeof state.startTimes==="object"&&Object.keys(state.startTimes).length)return true;
+        if(state.finishTimes&&typeof state.finishTimes==="object"&&Object.keys(state.finishTimes).length)return true;
+        const flow=state.startFlowStatus&&typeof state.startFlowStatus==="object"?Object.values(state.startFlowStatus):[];
+        if(flow.some(row=>row&&(row.startQrDeliveredAt||row.finishQrDeliveredAt||row.liveResultReceived||row.liveResultCode)))return true;
+        const logs=state.participantLogs&&typeof state.participantLogs==="object"?Object.values(state.participantLogs):[];
+        if(logs.some(row=>row&&(row.startTime||row.finishTime||row.resultPayload||(Array.isArray(row.scans)&&row.scans.length)||(Array.isArray(row.track)&&row.track.length))))return true;
+        if(typeof window.MILITOPO_LIVE_HAS_CURRENT_RACE_DATA==="function"&&window.MILITOPO_LIVE_HAS_CURRENT_RACE_DATA())return true;
+    }catch(_){ }
+    return false;
+}
 function rejectProtectedRaceMutation(action="modificar el ejercicio"){
     const guard=ensureRaceDataProtection();
     if(!guard.protected)return false;
-    const msg=`🔒 Carrera protegida: no puedes ${action} mientras existan datos de carrera guardados. Usa “BORRAR DATOS DE ESTA CARRERA” si realmente quieres preparar otra ejecución.`;
+    // Un run recordado o una carrera creada sin ninguna salida real no debe
+    // bloquear el diseño del ejercicio. Solo se protege desde que existe
+    // evidencia de carrera del ejercicio ACTUAL.
+    if(!currentExerciseHasRaceEvidence()){
+        state.raceDataProtection={protected:false,runId:"",startedAt:"",lastDataAt:"",status:""};
+        scheduleSaveState();
+        return false;
+    }
+    const msg=`🔒 Carrera protegida: no puedes ${action} mientras existan datos reales de carrera guardados. Usa “BORRAR DATOS DE ESTA CARRERA” si realmente quieres preparar otra ejecución.`;
     try{toast(msg)}catch(_){ }
     try{setRestoreStatus(msg,"warn")}catch(_){ }
     return true;
@@ -9858,15 +9888,19 @@ function bindStrongAutosave(){
     setInterval(saveState,4000);
 }
 
-function resetSavedEvent(){
-    const guard=ensureRaceDataProtection();
-    if(guard.protected && !window.__militopoDeleteExerciseInProgress && typeof window.MILITOPO_LIVE_DELETE_EXERCISE==="function"){window.MILITOPO_LIVE_DELETE_EXERCISE();return;}
-    if(!confirm("¿Borrar el evento guardado y empezar un evento totalmente nuevo? Se borrarán puntos, recorridos, descripciones IOF, QR, resultados y registros guardados."))return;
+async function resetSavedEvent(){
+    if(!window.__militopoDeleteExerciseInProgress && typeof window.MILITOPO_LIVE_DELETE_EXERCISE==="function"){
+        await window.MILITOPO_LIVE_DELETE_EXERCISE();
+        return;
+    }
+    if(!window.__militopoDeleteExerciseResetConfirmed&&!confirm("¿Borrar el evento guardado y empezar un evento totalmente nuevo? Se borrarán puntos, recorridos, descripciones IOF, QR, resultados y registros guardados."))return false;
     const deletedEventId=String(state.eventId||"");
 
+    __militopoOrganizerStateEpoch++;
     clearTimeout(__autoSaveTimer);
     clearTimeout(__durableSaveTimer);
-    deleteDurableOrganizerState(deletedEventId).catch(error=>console.warn("No se pudo borrar la copia duradera",error));
+    try{await withOrganizerTimeout(deleteDurableOrganizerState(deletedEventId),2200,"Borrado duradero")}catch(error){console.warn("No se pudo borrar la copia duradera",error)}
+    try{await window.MILITOPO_LIVE_PURGE_LOCAL_EVENT?.(deletedEventId)}catch(error){console.warn("No se pudo purgar el seguimiento local del evento",error)}
     localStorage.removeItem(STORAGE_KEY_MAIN);
     localStorage.removeItem(STORAGE_KEY_BACKUP);
     localStorage.removeItem(STORAGE_KEY_LEGACY);
@@ -9898,6 +9932,9 @@ function resetSavedEvent(){
     validateIofDescriptions();
     updateParticipantSelect();
     updateRouteCountInfo();
+    if(typeof renderRoutes==="function")renderRoutes();
+    const routeSummary=document.getElementById("routeSummary");
+    if(routeSummary){routeSummary.className="status warn";routeSummary.textContent="Todavía no hay recorridos generados.";}
     if(typeof updateOrganizerParticipantSelects==="function")updateOrganizerParticipantSelects();
     if(typeof renderResultsControl==="function")renderResultsControl();
     if(typeof renderExerciseVerifier==="function")renderExerciseVerifier(runExerciseVerifier(false));
@@ -9909,6 +9946,7 @@ function resetSavedEvent(){
     saveState();
     goStep(1,{silent:true});
     toast("Evento nuevo creado: "+state.eventId);
+    return true;
 }let step5ResultQrCameraStream=null;
 let step5ResultQrCameraRunning=false;
 let step5ResultQrDetector=null;
