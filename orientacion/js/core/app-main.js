@@ -2649,6 +2649,7 @@ const manualRouteEditorState={
     selectedControlIds:[],
     availableControlIds:[]
 };
+let manualRouteEditorLastFocus=null;
 
 function linkedRouteIndexesByRouteId(routeId,fallbackIndex){
     const linked=(state.routes||[])
@@ -2728,6 +2729,7 @@ function ensureManualRouteEditorModal(){
         </div>`;
     document.body.appendChild(modal);
     modal.addEventListener("click",ev=>{if(ev.target===modal)closeManualRouteEditor();});
+    modal.addEventListener("keydown",ev=>{if(ev.key==="Escape"){ev.preventDefault();closeManualRouteEditor();}});
     const closeBtn=modal.querySelector("#manualRouteCloseBtn");
     if(closeBtn)closeBtn.addEventListener("click",closeManualRouteEditor);
     return modal;
@@ -2818,10 +2820,14 @@ function openManualRouteEditor(routeIndex){
     manualRouteEditorState.routeId=String(route.routeId||("R"+String(routeIndex+1).padStart(2,"0")));
     manualRouteEditorState.targetCount=target;
     manualRouteEditorState.availableControlIds=controls;
-    manualRouteEditorState.selectedControlIds=[...new Set(((route.points||[]).filter(id=>id!=="START"&&id!=="FINISH")).slice(0,target).filter(id=>controls.includes(id)))];
+    manualRouteEditorState.selectedControlIds=[...new Set((route.points||[]).filter(id=>id!=="START"&&id!=="FINISH").filter(id=>controls.includes(id)))].slice(0,target);
+    manualRouteEditorLastFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
     ensureManualRouteEditorModal().style.display="flex";
     document.body.classList.add("manual-route-modal-open");
     renderManualRouteEditor();
+    const modal=document.getElementById("manualRouteEditorModal");
+    const focusTarget=modal?.querySelector("#manualRouteConfirmBtn:not([disabled]), [data-add-id]:not([disabled]), #manualRouteCloseBtn");
+    if(focusTarget&&typeof focusTarget.focus==="function")focusTarget.focus();
     return true;
 }
 
@@ -2829,6 +2835,9 @@ function closeManualRouteEditor(){
     const modal=document.getElementById("manualRouteEditorModal");
     if(modal)modal.style.display="none";
     document.body.classList.remove("manual-route-modal-open");
+    const restore=manualRouteEditorLastFocus;
+    manualRouteEditorLastFocus=null;
+    if(restore&&restore.isConnected&&typeof restore.focus==="function")restore.focus();
 }
 
 function renderRoutes(){

@@ -714,7 +714,9 @@ function mergeOrganizerParticipantRecords(baseRecord, incomingRecord) {
   merged.trackPointCount = Math.max(0, Number(incoming.trackPointCount) || 0, Number(base.trackPointCount) || 0);
   merged.trackDigest = String(incoming.trackDigest || base.trackDigest || "");
   merged.trackTransferId = String(incoming.trackTransferId || base.trackTransferId || "");
-  merged.online = incoming.online === false ? false : (incoming.online === true ? true : base.online !== false);
+  if (typeof incoming.online === "boolean") merged.online = incoming.online;
+  else if (typeof base.online === "boolean" && base.source !== "snapshot") merged.online = base.online;
+  else merged.online = false;
   merged.lastSeen = newerLiveTimestamp(incoming.lastSeen, base.lastSeen) || null;
   merged.lastSeenClient = newerLiveTimestamp(incoming.lastSeenClient, base.lastSeenClient) || null;
   return merged;
