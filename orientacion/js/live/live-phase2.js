@@ -689,6 +689,23 @@ function newerLiveTimestamp(a, b) {
   if (!Number.isFinite(bMs)) return a || "";
   return aMs >= bMs ? a : b;
 }
+function participantRecordFreshness(record) {
+  const source = record && typeof record === "object" ? record : {};
+  const stamps = [
+    source.lastSeenClient,
+    source.lastSeen,
+    source.finishTime,
+    source.startTime,
+    source.resultImportedClient,
+    source.resultImportedAt
+  ];
+  let latest = -1;
+  stamps.forEach(value => {
+    const ms = Date.parse(String(value || ""));
+    if (Number.isFinite(ms) && ms > latest) latest = ms;
+  });
+  return latest;
+}
 function mergeOrganizerParticipantRecords(baseRecord, incomingRecord) {
   const base = baseRecord && typeof baseRecord === "object" ? baseRecord : {};
   const incoming = incomingRecord && typeof incomingRecord === "object" ? incomingRecord : {};
@@ -702,9 +719,15 @@ function mergeOrganizerParticipantRecords(baseRecord, incomingRecord) {
   merged.completedControls = Math.min(merged.totalControls, rawCompleted);
   merged.discardedControls = Math.min(Math.max(0, merged.totalControls - merged.completedControls), rawDiscarded);
   merged.pendingControls = Math.max(0, merged.totalControls - merged.completedControls - merged.discardedControls);
-  merged.status = organizerStatusRank(incoming.status) >= organizerStatusRank(base.status)
-    ? String(incoming.status || "not_started")
-    : String(base.status || "not_started");
+  const incomingStatus = String(incoming.status || "");
+  const baseStatus = String(base.status || "");
+  const incomingFreshness = participantRecordFreshness(incoming);
+  const baseFreshness = participantRecordFreshness(base);
+  if (incomingStatus && incomingFreshness > baseFreshness) merged.status = incomingStatus;
+  else if (baseStatus && baseFreshness > incomingFreshness) merged.status = baseStatus;
+  else merged.status = organizerStatusRank(incomingStatus) >= organizerStatusRank(baseStatus)
+    ? (incomingStatus || "not_started")
+    : (baseStatus || "not_started");
   merged.startTime = incoming.startTime || base.startTime || null;
   merged.finishTime = incoming.finishTime || base.finishTime || null;
   merged.resultImported = incoming.resultImported === true || base.resultImported === true;

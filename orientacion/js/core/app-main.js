@@ -2651,6 +2651,24 @@ const manualRouteEditorState={
 };
 let manualRouteEditorLastFocus=null;
 
+function setManualRouteBackgroundHidden(hidden){
+    const targets=[document.querySelector(".app")].filter(Boolean);
+    targets.forEach(target=>{
+        if(!target)return;
+        if(hidden){
+            if("inert" in target)target.inert=true;
+            target.dataset.manualRoutePrevAriaHidden=target.getAttribute("aria-hidden")||"";
+            target.setAttribute("aria-hidden","true");
+        }else{
+            if("inert" in target)target.inert=false;
+            const prev=target.dataset.manualRoutePrevAriaHidden;
+            if(prev)target.setAttribute("aria-hidden",prev);
+            else target.removeAttribute("aria-hidden");
+            delete target.dataset.manualRoutePrevAriaHidden;
+        }
+    });
+}
+
 function linkedRouteIndexesByRouteId(routeId,fallbackIndex){
     const linked=(state.routes||[])
         .map((route,index)=>String(route?.routeId||"")===String(routeId)?index:-1)
@@ -2763,7 +2781,7 @@ function renderManualRouteEditor(){
         <div class="manual-route-selected-wrap">
             <div class="manual-route-subtitle">Secuencia actual</div>
             <div class="manual-route-selected-list">
-                ${selected.length?selected.map((id,index)=>`<button type="button" class="manual-route-chip is-selected" data-remove-index="${index}" title="Quitar ${escapeHtml(id)}">${index+1}. ${escapeHtml(id)} ✕</button>`).join(""):'<span class="manual-route-empty">Todavía no has añadido balizas.</span>'}
+                ${selected.length?selected.map((id,index)=>`<button type="button" class="manual-route-chip is-selected" data-remove-index="${index}" title="Quitar ${escapeHtml(id)}" aria-label="Quitar baliza ${escapeHtml(id)} de la posición ${index+1}">${index+1}. ${escapeHtml(id)} <span aria-hidden="true">✕</span></button>`).join(""):'<span class="manual-route-empty">Todavía no has añadido balizas.</span>'}
             </div>
         </div>
         <div class="manual-route-available-wrap">
@@ -2837,6 +2855,7 @@ function openManualRouteEditor(routeIndex){
     manualRouteEditorLastFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
     ensureManualRouteEditorModal().style.display="flex";
     document.body.classList.add("manual-route-modal-open");
+    setManualRouteBackgroundHidden(true);
     renderManualRouteEditor();
     const modal=document.getElementById("manualRouteEditorModal");
     const focusTarget=modal?.querySelector("#manualRouteConfirmBtn:not([disabled]), [data-add-id]:not([disabled]), #manualRouteCloseBtn");
@@ -2848,6 +2867,7 @@ function closeManualRouteEditor(){
     const modal=document.getElementById("manualRouteEditorModal");
     if(modal)modal.style.display="none";
     document.body.classList.remove("manual-route-modal-open");
+    setManualRouteBackgroundHidden(false);
     const restore=manualRouteEditorLastFocus;
     manualRouteEditorLastFocus=null;
     if(restore&&restore.isConnected&&typeof restore.focus==="function")restore.focus();
