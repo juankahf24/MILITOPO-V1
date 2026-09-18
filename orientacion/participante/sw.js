@@ -1,7 +1,7 @@
-/* MILITOPO Participante · v75-persistencia-carrera-20260918 · progreso offline primero */
-const CACHE_NAME="militopo-v1-participante-v75-persistencia-carrera-20260918";
-const RUNTIME_CACHE="militopo-v1-participante-runtime-v75-persistencia-carrera-20260918";
-const APP_SHELL=["./","./index.html","./runner.html","./styles.css","./styles.css?v=v75-persistencia-carrera-20260918","./app.js","./app.js?v=v75-persistencia-carrera-20260918","./manifest.webmanifest","./icons/participante-192.png","./icons/participante-512.png","./icons/apple-touch-icon.png","../js/live/live-phase2.js"];
+/* MILITOPO Participante · v77-reset-seguro-wakelock-20260919 · progreso offline primero */
+const CACHE_NAME="militopo-v1-participante-v77-reset-seguro-wakelock-20260919";
+const RUNTIME_CACHE="militopo-v1-participante-runtime-v77-reset-seguro-wakelock-20260919";
+const APP_SHELL=["./","./index.html","./runner.html","./styles.css","./styles.css?v=v77-reset-seguro-wakelock-20260919","./app.js","./app.js?v=v77-reset-seguro-wakelock-20260919","./manifest.webmanifest","./icons/participante-192.png","./icons/participante-512.png","./icons/apple-touch-icon.png","../js/live/live-phase2.js"];
 const REMOTE_ASSETS=["https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js","https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js","https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js","https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js"];
 async function cacheRemote(c,u){try{let r;try{r=await fetch(new Request(u,{mode:"cors",cache:"reload"}))}catch(_){r=await fetch(new Request(u,{mode:"no-cors",cache:"reload"}))}if(r)await c.put(u,r.clone())}catch(_){}}
 self.addEventListener("install",e=>{self.skipWaiting();e.waitUntil((async()=>{const c=await caches.open(CACHE_NAME);await Promise.allSettled(APP_SHELL.map(u=>c.add(new Request(u,{cache:"reload"}))));await Promise.allSettled(REMOTE_ASSETS.map(u=>cacheRemote(c,u)))})())});

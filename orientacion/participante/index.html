@@ -21,7 +21,7 @@
       try{
         var params=new URLSearchParams(location.search||'');
         if(!params.has('install') && !params.has('shell')){
-          var target=new URL('runner.html?v=v75-persistencia-carrera-20260918', location.href);
+          var target=new URL('runner.html?v=v77-reset-seguro-wakelock-20260919', location.href);
           params.forEach(function(v,k){ target.searchParams.set(k,v); });
           if(!target.searchParams.has('app')) target.searchParams.set('app','1');
           target.hash=location.hash||'';
@@ -35,14 +35,14 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/participante-192.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icons/participante-512.png">
-  <link rel="stylesheet" href="styles.css?v=v75-persistencia-carrera-20260918">
+  <link rel="stylesheet" href="styles.css?v=v77-reset-seguro-wakelock-20260919">
 </head>
 <body class="participant-page-booting">
   <button id="shellMenuBtn" class="shell-menu-btn shell-menu-floating" type="button" aria-label="Opciones">⋮</button>
 
   <main id="shellMain" class="participant-shell-main">
     <div id="shellLoading" class="shell-loading"><div class="shell-spinner"></div><b>Preparando MILITOPO Participante…</b></div>
-    <iframe id="participantFrame" scrolling="no" title="MILITOPO Participante" allow="camera; geolocation; autoplay; fullscreen; clipboard-write" referrerpolicy="same-origin"></iframe>
+    <iframe id="participantFrame" scrolling="no" title="MILITOPO Participante" allow="camera; geolocation; autoplay; fullscreen; clipboard-write; screen-wake-lock" referrerpolicy="same-origin"></iframe>
   </main>
 
   <section id="installGuide" class="install-guide" aria-live="polite">
@@ -92,8 +92,8 @@
   </section>
 
   <div id="shellToast" class="shell-toast" role="status"></div>
-  <script src="app.js?v=v75-persistencia-carrera-20260918"></script>
-  <script type="module" src="../js/live/live-phase2.js?v=v75-persistencia-carrera-20260918"></script>
+  <script src="app.js?v=v77-reset-seguro-wakelock-20260919"></script>
+  <script type="module" src="../js/live/live-phase2.js?v=v77-reset-seguro-wakelock-20260919"></script>
   <script>
     window.addEventListener("load",function(){
       document.body.classList.add("participant-page-ready");
