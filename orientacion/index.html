@@ -24,7 +24,7 @@ body.ori-page-booting,body.ori-page-booting .app{opacity:1!important;-webkit-tra
 <link rel="apple-touch-startup-image" href="../icons/militopo-startup-premium-2048x3072.jpg">
 <link rel="preload" as="style" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></noscript>
-<link rel="stylesheet" href="css/styles.css?v=v74-mapas-live-manual-20260918" />
+<link rel="stylesheet" href="css/styles.css?v=v75-persistencia-carrera-20260918" />
 
 
 
@@ -419,7 +419,8 @@ body.ori-page-booting,body.ori-page-booting .app{opacity:1!important;-webkit-tra
       <button class="btn secondary" onclick="downloadImportedResults()">📤 EXPORTAR JSON COMPLETO</button>
       <button class="btn secondary" onclick="downloadImportedResultsCsv()">📊 EXPORTAR CSV RESUMEN</button>
       <button class="btn secondary" onclick="downloadDetailedSplitsCsv()">⏱️ EXPORTAR PARCIALES CSV</button>
-      <button class="btn red" onclick="clearImportedResults()">🧹 LIMPIAR RESULTADOS</button>
+      <button class="btn red" onclick="window.MILITOPO_LIVE_DELETE_RACE_DATA ? window.MILITOPO_LIVE_DELETE_RACE_DATA() : clearImportedResults()">🧹 BORRAR DATOS DE ESTA CARRERA</button>
+      <button class="btn red" onclick="window.MILITOPO_LIVE_DELETE_EXERCISE ? window.MILITOPO_LIVE_DELETE_EXERCISE() : resetSavedEvent()">🗑️ BORRAR EJERCICIO COMPLETO</button>
       <button class="btn" onclick="saveState();toast('Resultados guardados')">💾 GUARDAR ESTADO</button>
     </div>
   </div>
@@ -614,8 +615,8 @@ body.ori-page-booting,body.ori-page-booting .app{opacity:1!important;-webkit-tra
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="js/vendor/qr.js?v=modular-fase2"></script>
-<script src="js/app.js?v=v74-mapas-live-manual-20260918"></script>
-<script type="module" src="js/live/live-phase2.js?v=v74-mapas-live-manual-20260918"></script>
+<script src="js/app.js?v=v75-persistencia-carrera-20260918"></script>
+<script type="module" src="js/live/live-phase2.js?v=v75-persistencia-carrera-20260918"></script>
 <script>
 window.addEventListener("load",function(){
   document.body.classList.add("ori-page-ready");
@@ -627,7 +628,7 @@ window.addEventListener("load",function(){
   if (!("serviceWorker" in navigator) || !("caches" in window) || !/^https?:$/.test(location.protocol)) return;
   async function cacheCurrentMilitopoPage(){
     try {
-      const cache = await caches.open("militopo-v1-page-snapshot-v74-mapas-live-manual-20260918");
+      const cache = await caches.open("militopo-v1-page-snapshot-v75-persistencia-carrera-20260918");
       await cache.add(new Request(location.href, { cache: "reload" })).catch(function(){});
       await Promise.allSettled(["./", "./index.html", "./js/app.js", "./js/live/live-phase2.js", "./js/config/iof-symbols-baked.js", "./js/config/plan-assets.js", "./js/core/app-main.js", "./js/pdf/pdf-professional.js", "./js/results/results-v16.js", "./js/results/results-classification-fix.js", "./css/styles.css", "./js/vendor/qr.js", "./maps/index.json"].map(function(url){
         return cache.add(new Request(url, { cache: "reload" }));
