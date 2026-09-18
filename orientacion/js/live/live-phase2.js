@@ -697,9 +697,11 @@ function mergeOrganizerParticipantRecords(baseRecord, incomingRecord) {
   merged.participantName = String(incoming.participantName || base.participantName || "").trim();
   merged.routeId = String(incoming.routeId || base.routeId || "");
   merged.totalControls = Math.max(0, Number(incoming.totalControls) || 0, Number(base.totalControls) || 0);
-  merged.completedControls = Math.max(0, Number(incoming.completedControls) || 0, Number(base.completedControls) || 0);
-  merged.discardedControls = Math.max(0, Number(incoming.discardedControls) || 0, Number(base.discardedControls) || 0);
-  merged.pendingControls = Math.max(0, Number(incoming.pendingControls) || 0, Number(base.pendingControls) || 0);
+  const rawCompleted = Math.max(0, Number(incoming.completedControls) || 0, Number(base.completedControls) || 0);
+  const rawDiscarded = Math.max(0, Number(incoming.discardedControls) || 0, Number(base.discardedControls) || 0);
+  merged.completedControls = Math.min(merged.totalControls, rawCompleted);
+  merged.discardedControls = Math.min(Math.max(0, merged.totalControls - merged.completedControls), rawDiscarded);
+  merged.pendingControls = Math.max(0, merged.totalControls - merged.completedControls - merged.discardedControls);
   merged.status = organizerStatusRank(incoming.status) >= organizerStatusRank(base.status)
     ? String(incoming.status || "not_started")
     : String(base.status || "not_started");

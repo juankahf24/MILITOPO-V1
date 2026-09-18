@@ -2729,7 +2729,20 @@ function ensureManualRouteEditorModal(){
         </div>`;
     document.body.appendChild(modal);
     modal.addEventListener("click",ev=>{if(ev.target===modal)closeManualRouteEditor();});
-    modal.addEventListener("keydown",ev=>{if(ev.key==="Escape"){ev.preventDefault();closeManualRouteEditor();}});
+    modal.addEventListener("keydown",ev=>{
+        if(ev.key==="Escape"){ev.preventDefault();closeManualRouteEditor();return;}
+        if(ev.key!=="Tab")return;
+        const focusables=[...modal.querySelectorAll('button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(el=>el.offsetParent!==null);
+        if(!focusables.length){ev.preventDefault();return;}
+        const first=focusables[0];
+        const last=focusables[focusables.length-1];
+        if(ev.shiftKey){
+            if(document.activeElement===first||!modal.contains(document.activeElement)){ev.preventDefault();last.focus();}
+        }else if(document.activeElement===last||!modal.contains(document.activeElement)){
+            ev.preventDefault();
+            first.focus();
+        }
+    });
     const closeBtn=modal.querySelector("#manualRouteCloseBtn");
     if(closeBtn)closeBtn.addEventListener("click",closeManualRouteEditor);
     return modal;
