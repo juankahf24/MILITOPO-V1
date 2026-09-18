@@ -25,27 +25,14 @@
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" type="image/png" sizes="192x192" href="icons/militopo-192.png">
     <link rel="apple-touch-icon" href="icons/militopo-192.png">
+    <link rel="apple-touch-startup-image" href="icons/militopo-startup-premium-2048x3072.jpg">
     <link rel="preload" as="image" href="icons/militopo-startup-premium-2048x3072.jpg" fetchpriority="high">
     <link rel="preload" as="image" href="icons/militopo-startup-1536.png" fetchpriority="high">
     <link rel="preload" as="image" href="icons/militopo-512.png" fetchpriority="high">
-    <!-- Leaflet -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- Proj4js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
-    <!-- SheetJS -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    <script>window.XLSXBase = window.XLSX;</script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-    <script>window.XLSXStyle = window.XLSX; window.XLSX = window.XLSXBase;</script>
-    <!-- JSZip y FileSaver -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-    <!-- QRCode -->
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-    <!-- jsPDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <link rel="stylesheet" href="styles.css?v=v73-integridad-offline-20260918">
+    <!-- Leaflet CSS no bloquea el primer pintado del menú de inicio -->
+    <link rel="preload" as="style" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></noscript>
+    <link rel="stylesheet" href="styles.css?v=v74-mapas-live-manual-20260918">
 </head>
 <body class="militopo-booting" style="background:#0a0e0a;">
 
@@ -610,7 +597,19 @@ BRAVO 1"></textarea>
         </div>
     </div>
 
-<script src="app.js?v=v73-integridad-offline-20260918"></script>
+<!-- Dependencias: al final del BODY para que nunca retrasen el primer pintado oscuro -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script>window.XLSXBase = window.XLSX;</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script>window.XLSXStyle = window.XLSX; window.XLSX = window.XLSXBase;</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script src="app.js?v=v74-mapas-live-manual-20260918"></script>
 
 <div id="locationDeniedOverlay" class="location-overlay">
     <div class="location-overlay-card">
