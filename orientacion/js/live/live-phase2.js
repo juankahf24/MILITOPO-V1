@@ -220,7 +220,13 @@ async function organizerRaceSnapshotPut(eventKey,runId,participants){
   const dbx=await organizerRaceSnapshotOpen();
   try{
     const tx=dbx.transaction(ORGANIZER_RACE_SNAPSHOT_STORE,"readwrite");
-    tx.objectStore(ORGANIZER_RACE_SNAPSHOT_STORE).put({id:`${eventKey}:${runId}`,eventKey,runId,status:organizerRunStatus||"active",savedAt:nowIso(),participants:participants&&typeof participants==="object"?participants:{}});
+    const store=tx.objectStore(ORGANIZER_RACE_SNAPSHOT_STORE),id=`${eventKey}:${runId}`;
+    const incoming=participants&&typeof participants==="object"?participants:{};
+    const request=store.get(id);
+    request.onsuccess=()=>{
+      const prior=request.result?.participants||{};
+      store.put({id,eventKey,runId,status:organizerRunStatus||"active",savedAt:nowIso(),participants:mergeOrganizerParticipantMaps(prior,incoming)});
+    };
     await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error("No se pudo guardar el seguimiento"));tx.onabort=()=>reject(tx.error||new Error("Se canceló el guardado del seguimiento"));});
   }finally{try{dbx.close()}catch(_){}}
 }
@@ -261,8 +267,9 @@ function writeOrganizerParticipantsSnapshot(rows, eventKey = organizerEventKey, 
       const mapKey=safeFirebaseKey(pid);
       participants[mapKey] = mergeOrganizerParticipantRecords(participants[mapKey]||{},slimOrganizerParticipant(row));
     });
-    localStorage.setItem(key, JSON.stringify({ savedAt: nowIso(), participants }));
-    organizerRaceSnapshotPut(String(eventKey||""),String(runId||""),participants).catch(error=>console.warn("MILITOPO LIVE · copia IndexedDB",error));
+    try{localStorage.setItem(key, JSON.stringify({ savedAt: nowIso(), participants }));}
+    catch(error){console.warn("MILITOPO LIVE · copia local",error);setMessage("No se pudo guardar la copia local de seguimiento. Revisa el almacenamiento del navegador.","warn");}
+    organizerRaceSnapshotPut(String(eventKey||""),String(runId||""),participants).catch(error=>{console.warn("MILITOPO LIVE · copia IndexedDB",error);setMessage("No se pudo guardar la copia duradera del seguimiento. Revisa el almacenamiento del navegador.","warn")});
   } catch (error) {
     console.warn("MILITOPO LIVE · snapshot local", error);
     setMessage("No se pudo guardar la copia local del seguimiento en vivo. Revisa el almacenamiento del navegador.", "warn");
@@ -585,7 +592,7 @@ async function hydrateOrganizerTrack(participant){
   const vaultKey=`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(pid)}`;
   if(organizerTrackHydrationBusy.has(vaultKey))return;
   const cached=organizerTrackMemory.get(vaultKey);
-  if(Array.isArray(cached)&&cached.length>=expected){
+  if(Array.isArray(cached)&&cached.length===expected&&(!participant?.trackDigest||stableTrackDigest(cached)===String(participant.trackDigest))){
     if(typeof window.MILITOPO_LIVE_ATTACH_TRACK==="function")window.MILITOPO_LIVE_ATTACH_TRACK(pid,cached,{trackPointCount:expected,trackDigest:participant?.trackDigest,live:true});
     return;
   }
