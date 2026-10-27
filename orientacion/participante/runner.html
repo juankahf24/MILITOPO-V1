@@ -1607,7 +1607,7 @@ module.exports = QRCode;
 
 <div id="gpsAudioVisualPulse" class="gps-audio-visual-pulse"></div>
 <div id="toast" style="display:none;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1c2414;color:#f5e6c8;border-radius:999px;padding:12px 16px;font-weight:900"></div>
-<script type="module" src="../js/live/live-phase2.js?v=v77-reset-seguro-wakelock-20260919"></script>
+<script type="module" src="../js/live/live-phase2.js?v=v81-seguridad-offline-20261027"></script>
 <script>
 const BOOT_PAYLOAD_KEYS=["militopo_v1_participant_boot_payload_v3","militopo_v1_participant_boot_payload_latest","militopo_v1_participant_app_snapshot_v1","militopo_v1_participante_recorrido_activo_v1","militopo_v1_participante_recorrido_rescate_v1"];
 const PARTICIPANT_FORCE_BLANK_KEY="militopo_v1_participant_force_blank_v1";
@@ -1761,6 +1761,8 @@ const PARTICIPANT_IDB_STORE="estado";
 const PARTICIPANT_TRACK_JOURNAL_DB="MILITOPO_V1_PARTICIPANTE_TRACK_JOURNAL_V1";
 const PARTICIPANT_TRACK_JOURNAL_STORE="points";
 let participantTrackJournalWrite=Promise.resolve();
+let participantSnapshotWrite=Promise.resolve(),participantSnapshotPending=null,participantSnapshotBusy=false,participantSnapshotResetting=false;
+let participantSnapshotStorageError="";
 let finishedRecoverySyncTimer=null;
 let participantStorageError="";
 let participantPersistentStorageGranted=null;
@@ -1793,7 +1795,7 @@ function participantTrackJournalAppend(point,index){
         try{db.close()}catch(_){ }
         const recoveredFromStorageError=!!participantStorageError;
         participantStorageError="";
-        if(recoveredFromStorageError)notifyMilitopoLive("STORAGE_HEALTH",{storageError:""});
+        if(recoveredFromStorageError)notifyMilitopoLive("STORAGE_HEALTH",{storageError:participantSnapshotStorageError||""});
         return true;
     });
     return participantTrackJournalWrite;
@@ -1920,12 +1922,30 @@ function participantSnapshotPayload(eventData,runLog){
     }catch(e){return null}
 }
 function persistParticipantSnapshotAsync(eventData,runLog){
+    if(participantSnapshotResetting)return false;
     try{
         const snap=participantSnapshotPayload(eventData,runLog);
         if(!snap)return false;
-        participantIdbSet("snapshot",snap);
-        participantIdbSet("eventData",snap.eventData);
-        if(snap.log)participantIdbSet("runLog",snap.log);
+        participantSnapshotPending=JSON.parse(JSON.stringify(snap));
+        if(!participantSnapshotBusy){
+            participantSnapshotBusy=true;
+            participantSnapshotWrite=(async()=>{
+                while(participantSnapshotPending){
+                    const captured=participantSnapshotPending;participantSnapshotPending=null;
+                    const saved=await participantIdbSet("snapshot",captured);
+                    const eventSaved=await participantIdbSet("eventData",captured.eventData);
+                    const logSaved=!captured.log||await participantIdbSet("runLog",captured.log);
+                    if(!saved||!eventSaved||!logSaved){
+                        participantSnapshotStorageError="No se pudo guardar la copia del participante";
+                        notifyMilitopoLive("STORAGE_HEALTH",{storageError:participantSnapshotStorageError});
+                        setParticipantLiveSyncStatus("error","🔴 ERROR AL GUARDAR · MANTÉN LA APP ABIERTA");
+                    }else if(participantSnapshotStorageError){
+                        participantSnapshotStorageError="";
+                        notifyMilitopoLive("STORAGE_HEALTH",{storageError:participantStorageError||""});
+                    }
+                }
+            })().catch(error=>{participantSnapshotStorageError=String(error?.message||"No se pudo guardar la copia");notifyMilitopoLive("STORAGE_HEALTH",{storageError:participantSnapshotStorageError});}).finally(()=>{participantSnapshotBusy=false;if(participantSnapshotPending)persistParticipantSnapshotAsync(participantSnapshotPending.eventData,participantSnapshotPending.log);});
+        }
         return true;
     }catch(e){return false}
 }
@@ -2432,7 +2452,7 @@ function formatParticipantLastSync(value){
     const date=d.toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit"});
     el.textContent="ÚLTIMA SINCRONIZACIÓN EN VIVO · "+(sameDay?"HOY · ":date+" · ")+time;
 }
-function setParticipantLiveSyncStatus(state,text,lastSyncAt){const el=gpsEl("liveSyncStatus");const allowed={synced:1,offline:1,syncing:1,inactive:1};const safe=allowed[state]?state:"inactive";participantLiveSyncState=safe;if(el){el.className="live-sync-status is-"+safe;el.textContent=String(text||"⚪ CARRERA EN VIVO NO ACTIVA")}formatParticipantLastSync(lastSyncAt)}
+function setParticipantLiveSyncStatus(state,text,lastSyncAt){const el=gpsEl("liveSyncStatus");const allowed={synced:1,offline:1,syncing:1,inactive:1,error:1};const safe=allowed[state]?state:"inactive";participantLiveSyncState=safe;if(el){el.className="live-sync-status is-"+safe;el.textContent=String(text||"⚪ CARRERA EN VIVO NO ACTIVA")}formatParticipantLastSync(lastSyncAt)}
 function resizeParticipantFrameFromInside(){try{const frame=window.frameElement;if(!frame)return;requestAnimationFrame(()=>{const h=Math.max(document.body?.scrollHeight||0,document.documentElement?.scrollHeight||0,window.innerHeight||0,900);frame.style.height=(h+24)+"px";frame.style.minHeight=(h+24)+"px";try{const pdoc=window.parent.document;pdoc.documentElement.style.overflowY="auto";pdoc.body.style.overflowY="auto";pdoc.body.style.overflowX="hidden"}catch(_){}})}catch(e){}}
 function focusFinishNoticeAtTop(){setTimeout(()=>{try{resizeParticipantFrameFromInside();if(window.parent&&window.parent!==window){const topbar=window.parent.document.querySelector("#militopoParticipantOnlyShell .participant-only-topbar");if(topbar){topbar.scrollIntoView({behavior:"smooth",block:"start"});return}const frame=window.frameElement;if(frame)frame.scrollIntoView({behavior:"smooth",block:"start"})}else{gpsEl("gpsFinishNotice")?.scrollIntoView({behavior:"smooth",block:"start"})}}catch(e){try{gpsEl("gpsFinishNotice")?.scrollIntoView({behavior:"smooth",block:"start"})}catch(_){}}},80)}
 function closeGpsFinishNotice(){const el=gpsEl("gpsFinishNotice");gpsFinishNoticeDismissedMode=gpsFinishNoticeMode;if(el)el.classList.remove("open");resizeParticipantFrameFromInside()}
@@ -2830,7 +2850,7 @@ function recordRaceTrackPoint(pos,force=false,eventType="gps"){
             setParticipantLiveSyncStatus("error","🔴 ERROR AL GUARDAR GPS · MANTÉN LA APP ABIERTA");
             console.error("No se pudo escribir el punto en el diario GPS",error);
         });
-        if(log.track.length>18000)log.track.splice(0,log.track.length-18000);
+
         militopoTrackLastSavedAt=now;militopoTrackLastPoint={lat,lon};if(Number.isFinite(heading))militopoTrackLastHeading=heading;
         if(force||log.track.length%4===0)save();
         const trackCheckpointMs=participantLiveSyncState==="synced"||participantLiveSyncState==="syncing"?20000:120000;
@@ -3017,6 +3037,8 @@ async function performParticipantAppReset(){
         if(log?.finishTime)scheduleFinishedRecoverySync(0);
         return false;
     }
+    participantSnapshotResetting=true;participantSnapshotPending=null;
+    try{await participantSnapshotWrite}catch(_){}
     try{stopProximityGps(true)}catch(e){}
     try{unlockRaceScreen(true)}catch(e){}
     try{stopQrCamera()}catch(e){}
