@@ -50,6 +50,8 @@ function resetStateToFreshEvent(){
 
 let __militopoOrientationInitialized=false;
 let __militopoOrganizerStateEpoch=0;
+let __durableRecoveryPending=true, __durableRecoveryFailed=false;
+let __durableWriteQueue=Promise.resolve();
 function init(){
     if(__militopoOrientationInitialized)return;
     __militopoOrientationInitialized=true;
@@ -86,7 +88,7 @@ function init(){
 
         // La copia IndexedDB es una red de seguridad, nunca debe bloquear el arranque.
         const bootStateEpoch=__militopoOrganizerStateEpoch;
-        setTimeout(()=>recoverDurableOrganizerStateAfterBoot(restoreInfo,bootStateEpoch).catch(error=>console.warn("Recuperación duradera posterior al arranque",error)),600);
+        recoverDurableOrganizerStateAfterBoot(restoreInfo,bootStateEpoch).catch(error=>console.warn("Recuperación duradera posterior al arranque",error));
         setTimeout(()=>{
             initMapWhenReady();
             restoreOrientationGeoTiffFromDb().finally(()=>goStep(currentAppStep,{silent:true,noScroll:true}));
@@ -9517,36 +9519,43 @@ function openDurableOrganizerDb(){
 function durableTrackSignature(track){
     const list=Array.isArray(track)?track:[];
     if(!list.length)return "";
-    const last=list[list.length-1]||{};
-    return `${list.length}:${String(last.t||last.time||last.timestamp||"")}:${Number(last.lat)||0}:${Number(last.lon||last.lng)||0}`;
+    const text=JSON.stringify(list);let hash=2166136261;
+    for(let i=0;i<text.length;i++){hash^=text.charCodeAt(i);hash=Math.imul(hash,16777619);}
+    return `${list.length}:${text.length}:${(hash>>>0).toString(36)}`;
 }
-async function persistDurableOrganizerState(payload){
-    if(!payload?.state?.eventId)return false;
-    const eventId=String(payload.state.eventId);
-    const db=await openDurableOrganizerDb();
+async function persistDurableOrganizerState(payload,tracks,epoch){
+    if(!payload?.state?.eventId||epoch!==__militopoOrganizerStateEpoch)return false;
+    const eventId=String(payload.state.eventId),db=await openDurableOrganizerDb();
+    if(epoch!==__militopoOrganizerStateEpoch){try{db.close()}catch(_){}return false;}
     try{
-        const compact=JSON.parse(JSON.stringify(payload));
         const tx=db.transaction([DURABLE_ORGANIZER_EVENT_STORE,DURABLE_ORGANIZER_TRACK_STORE],"readwrite");
-        tx.objectStore(DURABLE_ORGANIZER_EVENT_STORE).put({eventId,savedAt:compact.savedAt,currentStep:compact.currentStep,selectedIofPointId:compact.selectedIofPointId||"START",state:compact.state});
-        const trackStore=tx.objectStore(DURABLE_ORGANIZER_TRACK_STORE);
-        (state.importedResults||[]).forEach(result=>{
-            const pid=String(result?.participantId||"");
-            const track=Array.isArray(result?.track)&&result.track.length?result.track:(Array.isArray(result?.gpsTrack)?result.gpsTrack:[]);
-            if(!pid||!track.length)return;
-            const id=`${eventId}:${pid}`;
-            const sig=durableTrackSignature(track);
+        tx.objectStore(DURABLE_ORGANIZER_EVENT_STORE).put({eventId,savedAt:payload.savedAt,currentStep:payload.currentStep,selectedIofPointId:payload.selectedIofPointId||"START",state:payload.state});
+        const trackStore=tx.objectStore(DURABLE_ORGANIZER_TRACK_STORE),pendingSignatures=[];
+        tracks.forEach(({pid,track,startTime})=>{
+            const id=`${eventId}:${pid}`,sig=String(startTime||"")+"|"+durableTrackSignature(track);
             if(__durableTrackSignatures.get(id)===sig)return;
-            __durableTrackSignatures.set(id,sig);
-            trackStore.put({id,eventId,participantId:pid,track,trackPointCount:track.length,savedAt:compact.savedAt});
+            const req=trackStore.get(id);
+            req.onsuccess=()=>{
+                const previous=req.result;
+                if(!previous||String(previous.startTime||"")!==String(startTime||"")||!Array.isArray(previous.track)||previous.track.length<=track.length){
+                    trackStore.put({id,eventId,participantId:pid,startTime,track,trackPointCount:track.length,savedAt:payload.savedAt});
+                    pendingSignatures.push([id,sig]);
+                }
+            };
         });
         await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error("No se pudo guardar el archivo duradero"));tx.onabort=()=>reject(tx.error||new Error("Se canceló el guardado duradero"));});
+        pendingSignatures.forEach(([id,sig])=>__durableTrackSignatures.set(id,sig));
         return true;
     }finally{try{db.close()}catch(_){}}
 }
 function scheduleDurableOrganizerState(payload){
+    if(__durableRecoveryPending||__durableRecoveryFailed)return;
     clearTimeout(__durableSaveTimer);
-    const snapshot=JSON.parse(JSON.stringify(payload));
-    __durableSaveTimer=setTimeout(()=>persistDurableOrganizerState(snapshot).catch(error=>console.warn("Copia duradera del organizador",error)),350);
+    const snapshot=JSON.parse(JSON.stringify(payload)),epoch=__militopoOrganizerStateEpoch;
+    const tracks=(state.importedResults||[]).map(result=>({pid:String(result?.participantId||""),startTime:String(result?.startTime||""),track:Array.isArray(result?.track)&&result.track.length?result.track.slice():(Array.isArray(result?.gpsTrack)?result.gpsTrack.slice():[])})).filter(row=>row.pid&&row.track.length);
+    __durableSaveTimer=setTimeout(()=>{
+        __durableWriteQueue=__durableWriteQueue.catch(()=>{}).then(()=>persistDurableOrganizerState(snapshot,tracks,epoch)).catch(error=>{console.warn("Copia duradera del organizador",error);setRestoreStatus("⚠️ No se pudo guardar la copia duradera. Conserva la carrera y revisa el almacenamiento.","err")});
+    },350);
 }
 async function readDurableOrganizerState(eventId=""){
     const db=await openDurableOrganizerDb();
@@ -9570,8 +9579,9 @@ async function readDurableOrganizerState(eventId=""){
         const byPid=new Map((tracks||[]).map(row=>[String(row.participantId||""),row]));
         (restored.state.importedResults||[]).forEach(result=>{
             const row=byPid.get(String(result?.participantId||""));
-            if(row?.track?.length){result.track=row.track;result.gpsTrack=row.track;result.trackPointCount=Math.max(Number(result.trackPointCount)||0,row.track.length);}
+            if(row?.track?.length&&(!row.startTime||!result.startTime||String(row.startTime)===String(result.startTime))){result.track=row.track;result.gpsTrack=row.track;result.trackPointCount=Math.max(Number(result.trackPointCount)||0,row.track.length);}
         });
+        restored._durableTracks=tracks;
         return restored;
     }finally{try{db.close()}catch(_){}}
 }
@@ -9588,31 +9598,47 @@ async function deleteDurableOrganizerState(eventId){
         [...__durableTrackSignatures.keys()].filter(key=>key.startsWith(target+":")).forEach(key=>__durableTrackSignatures.delete(key));
     }finally{try{db.close()}catch(_){}}
 }
-async function restoreDurableOrganizerState(restoreInfo){
+async function restoreDurableOrganizerState(restoreInfo,expectedEpoch=__militopoOrganizerStateEpoch){
     const currentEvent=restoreInfo?.restored?String(state.eventId||""):"";
+    const before=JSON.stringify(state);
     const durable=await withOrganizerTimeout(readDurableOrganizerState(currentEvent),1800,"Recuperación duradera");
-    if(!durable?.state)return restoreInfo;
+    if(expectedEpoch!==__militopoOrganizerStateEpoch||!durable?.state)return restoreInfo;
     const localMs=Date.parse(String(restoreInfo?.savedAt||""))||0;
     const durableMs=Date.parse(String(durable.savedAt||""))||0;
-    if(restoreInfo?.restored&&localMs>=durableMs)return restoreInfo;
-    Object.assign(state,durable.state);
-    if(!state.importedResults)state.importedResults=[];
-    if(!state.participantNames)state.participantNames={};
-    if(!state.skippedRoutes)state.skippedRoutes={};
-    if(!state.raceDataProtection)state.raceDataProtection={protected:false,runId:"",startedAt:"",lastDataAt:"",status:""};
-    currentAppStep=normalizeAppStep(durable.currentStep||state.currentStep||1);
-    selectedIofPointId=durable.selectedIofPointId||selectedIofPointId||"START";
-    return {restored:true,step:currentAppStep,reason:"indexeddb_durable",savedAt:durable.savedAt};
+    const unchanged=before===JSON.stringify(state);
+    if(unchanged&&(!restoreInfo?.restored||durableMs>localMs)){
+        Object.assign(state,durable.state);
+        if(!state.importedResults)state.importedResults=[];
+        if(!state.participantNames)state.participantNames={};
+        if(!state.skippedRoutes)state.skippedRoutes={};
+        if(!state.raceDataProtection)state.raceDataProtection={protected:false,runId:"",startedAt:"",lastDataAt:"",status:""};
+        currentAppStep=normalizeAppStep(durable.currentStep||state.currentStep||1);
+        selectedIofPointId=durable.selectedIofPointId||selectedIofPointId||"START";
+        return {restored:true,step:currentAppStep,reason:"indexeddb_durable",savedAt:durable.savedAt};
+    }
+    if(String(state.eventId||"")===String(durable.eventId||"")){
+        const byPid=new Map((durable.state.importedResults||[]).map(result=>[String(result?.participantId||""),result]));
+        (durable._durableTracks||[]).forEach(row=>{if(row?.participantId&&Array.isArray(row.track))byPid.set(String(row.participantId),row)});
+        (state.importedResults||[]).forEach(result=>{
+            const stored=byPid.get(String(result?.participantId||""));
+            const track=(!stored?.startTime||!result.startTime||String(stored.startTime)===String(result.startTime))&&Array.isArray(stored?.track)?stored.track:[];
+            const existing=Array.isArray(result.track)&&result.track.length?result.track:(Array.isArray(result.gpsTrack)?result.gpsTrack:[]);
+            if(track.length>existing.length){result.track=track;result.gpsTrack=track;result.trackPointCount=Math.max(Number(result.trackPointCount)||0,track.length);}
+        });
+    }
+    return restoreInfo;
 }
 async function recoverDurableOrganizerStateAfterBoot(localRestoreInfo,expectedEpoch=__militopoOrganizerStateEpoch){
     if(expectedEpoch!==__militopoOrganizerStateEpoch)return false;
     let recovered;
-    try{recovered=await restoreDurableOrganizerState(localRestoreInfo)}catch(error){console.warn("Copia duradera no disponible; se continúa con el estado local",error);return false}
+    try{recovered=await restoreDurableOrganizerState(localRestoreInfo,expectedEpoch)}catch(error){__durableRecoveryFailed=true;__durableRecoveryPending=false;console.warn("Copia duradera no disponible; se continúa con el estado local",error);setRestoreStatus("⚠️ No se ha podido verificar la copia duradera. Se conserva sin sobrescribir; revisa el almacenamiento y recarga.","err");return false}
+    __durableRecoveryPending=false;
     if(expectedEpoch!==__militopoOrganizerStateEpoch)return false;
-    if(!recovered?.restored||recovered.reason!=="indexeddb_durable")return false;
+    if(!recovered?.restored||recovered.reason!=="indexeddb_durable"){saveState();return false;}
     try{
         syncConfigToUi();
         rebuildPointsFromConfig(true);
+        saveState();
         renderPointSelectors();
         renderPointsTable();
         renderIofDescriptionsEditor();
@@ -9895,6 +9921,8 @@ async function resetSavedEvent(){
     __militopoOrganizerStateEpoch++;
     clearTimeout(__autoSaveTimer);
     clearTimeout(__durableSaveTimer);
+    __durableRecoveryPending=false;__durableRecoveryFailed=false;
+    await __durableWriteQueue.catch(()=>{});
     try{await withOrganizerTimeout(deleteDurableOrganizerState(deletedEventId),2200,"Borrado duradero")}catch(error){console.warn("No se pudo borrar la copia duradera",error)}
     try{await window.MILITOPO_LIVE_PURGE_LOCAL_EVENT?.(deletedEventId)}catch(error){console.warn("No se pudo purgar el seguimiento local del evento",error)}
     localStorage.removeItem(STORAGE_KEY_MAIN);
