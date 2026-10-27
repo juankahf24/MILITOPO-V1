@@ -99,6 +99,7 @@ let participantRunResolvePromise = null;
 let organizerAutoImportTimer = null;
 let organizerLatestRows = [];
 const organizerTrackMemory = new Map();
+const organizerVaultWrites = new Map();
 const organizerTrackHydrationBusy = new Set();
 let organizerSort = { key: "default", direction: "asc" };
 let participantStorageError = "";
@@ -144,7 +145,8 @@ function stableTrackDigest(points) {
     feed(Number(point?.lon ?? point?.lng ?? point?.longitude).toFixed(7));
     feed(point?.event || "");
   });
-  return `${rows.length}-${(hash >>> 0).toString(36)}`;
+  const digest=`${rows.length}-${(hash >>> 0).toString(36)}`;
+  return digest;
 }
 
 function participantLastSyncKey(ctx = participantContext) {
@@ -569,6 +571,13 @@ async function organizerTrackVaultDeleteEvent(eventKey){
   }finally{try{dbx.close()}catch(_){}}
 }
 
+function persistOrganizerTrackOnce(vaultKey, participantId, track, digest){
+  const prior=organizerVaultWrites.get(vaultKey);
+  if(prior&&prior.digest===digest)return;
+  const entry={digest};organizerVaultWrites.set(vaultKey,entry);
+  organizerTrackVaultPut({id:vaultKey,eventKey:organizerEventKey,runId:organizerRunId,participantId:String(participantId||""),trackPointCount:track.length,trackDigest:digest,track,savedAt:nowIso()}).catch(error=>{if(organizerVaultWrites.get(vaultKey)===entry)organizerVaultWrites.delete(vaultKey);console.warn("MILITOPO LIVE · vault organizador",error)});
+}
+
 async function hydrateOrganizerTrack(participant){
   const pid=String(participant?.participantId||"");
   const expected=Math.max(0,Number(participant?.trackPointCount)||0);
@@ -934,6 +943,8 @@ window.MILITOPO_LIVE_HAS_CURRENT_RACE_DATA=function(){
 };
 
 function renderOrganizerParticipants(participantsValue) {
+  const frameDigests=new WeakMap();
+  const digestForRender=track=>{if(!frameDigests.has(track))frameDigests.set(track,stableTrackDigest(track));return frameDigests.get(track)};
   organizerLatestParticipantsValue=participantsValue&&typeof participantsValue==="object"?participantsValue:{};
   const participants = mergeOrganizerParticipantsWithContext(organizerLatestParticipantsValue);
   const rows = applyOrganizerColumnSort(sortOrganizerParticipants(participants));
@@ -945,32 +956,34 @@ function renderOrganizerParticipants(participantsValue) {
   if(organizerEventKey && organizerRunId) writeOrganizerParticipantsSnapshot([...allReceivedRows,...rows]);
   allReceivedRows.forEach(p=>{
     if(!Array.isArray(p?.track)||!p.track.length||!organizerEventKey||!organizerRunId)return;
-    const digest=stableTrackDigest(p.track);
+    const digest=digestForRender(p.track);
     if(p?.trackDigest&&String(p.trackDigest)!==digest)return;
     const vaultKey=`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p.participantId)}`;
     organizerTrackMemory.set(vaultKey,p.track);
-    organizerTrackVaultPut({id:vaultKey,eventKey:organizerEventKey,runId:organizerRunId,participantId:String(p.participantId||""),trackPointCount:p.track.length,trackDigest:digest,track:p.track,savedAt:nowIso()}).catch(error=>console.warn("MILITOPO LIVE · vault oculto",error));
+    persistOrganizerTrackOnce(vaultKey,p.participantId,p.track,digest);
   });
   rows.forEach(p=>{
     if(!Array.isArray(p?.track)||!p.track.length)return;
-    const digest=stableTrackDigest(p.track);
+    const digest=digestForRender(p.track);
     if(p?.trackDigest&&String(p.trackDigest)!==digest)return;
     organizerTrackMemory.set(`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p.participantId)}`,p.track);
   });
   const counts = { total: rows.length, pending:0, racing:0, finished:0 };
+  let startFlowChanged=false;
   rows.forEach(p => {
     if (typeof window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS === "function") {
-      window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS(p.participantId, p.status, {
+      startFlowChanged=window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS(p.participantId, p.status, {
         resultImported: organizerResultIsReceived(p),
         resultCode: String(p?.resultCode || ""),
         startTime: p?.startTime || null,
         finishTime: p?.finishTime || null
-      });
+      },true)||startFlowChanged;
     }
     if (p.status === "racing") counts.racing++;
     else if (p.status === "finished") counts.finished++;
     else counts.pending++;
   });
+  if(startFlowChanged)window.MILITOPO_LIVE_FLUSH_STARTFLOW_STATUS?.();
   if ($("live2Total")) $("live2Total").textContent = String(counts.total);
   if ($("live2Pending")) $("live2Pending").textContent = String(counts.pending);
   if ($("live2Racing")) $("live2Racing").textContent = String(counts.racing);
@@ -994,9 +1007,10 @@ function renderOrganizerParticipants(participantsValue) {
   if (!body) return;
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="12" class="militopo-live2-empty">Todavía no hay participantes preparados.</td></tr>`;
+    body._militopoTableHtml=null;
     return;
   }
-  body.innerHTML = rows.map(p => {
+  const tableHtml = rows.map(p => {
     const st = stateLabel(p.status, p.online, p.resultImported === true);
     const pid = String(p.participantId || "—");
     const name = String(p.participantName || "").trim();
@@ -1012,7 +1026,7 @@ function renderOrganizerParticipants(participantsValue) {
     const penaltyMs = (discarded + (finishedForPenalty ? pending : 0)) * penaltyMinutes * 60000;
     const expectedTrack=Math.max(0,Number(p.trackPointCount)||0);
     const verifiedTrack=organizerTrackMemory.get(`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p.participantId)}`);
-    const trackOk=expectedTrack>0&&p.trackComplete===true&&!!p.trackReceivedClient&&!!p.trackDigest&&Array.isArray(verifiedTrack)&&verifiedTrack.length===expectedTrack&&stableTrackDigest(verifiedTrack)===String(p.trackDigest);
+    const trackOk=expectedTrack>0&&p.trackComplete===true&&!!p.trackReceivedClient&&!!p.trackDigest&&Array.isArray(verifiedTrack)&&verifiedTrack.length===expectedTrack&&digestForRender(verifiedTrack)===String(p.trackDigest);
     const trackLabel=trackOk?`✅ ${expectedTrack} puntos`:(finishRaw?`⏳ ${expectedTrack||0} puntos`:"—");
     return `<tr>
       <td class="militopo-live2-name"><b>${safeText(name || pid)}</b><small><span>${safeText(name ? pid : "Sin nombre asignado")}</span><span class="militopo-live2-route-tag">${safeText(routeId)}</span></small></td>
@@ -1029,14 +1043,15 @@ function renderOrganizerParticipants(participantsValue) {
       <td><span class="militopo-live2-state ${trackOk?"imported":finishRaw?"ready":"not_started"}">${safeText(trackLabel)}</span></td>
     </tr>`;
   }).join("");
+  if(body._militopoTableHtml!==tableHtml){body.innerHTML=tableHtml;body._militopoTableHtml=tableHtml;}
   refreshOrganizerTimeCells();
   rows.forEach(p=>{
     if(Array.isArray(p?.track)&&p.track.length){
       const vaultKey=`${organizerEventKey}:${organizerRunId}:${safeFirebaseKey(p.participantId)}`;
-      const digest=stableTrackDigest(p.track);
+      const digest=digestForRender(p.track);
       if(!p.trackDigest||String(p.trackDigest)===digest){
         organizerTrackMemory.set(vaultKey,p.track);
-        organizerTrackVaultPut({id:vaultKey,eventKey:organizerEventKey,runId:organizerRunId,participantId:String(p.participantId||""),trackPointCount:p.track.length,trackDigest:digest,track:p.track,savedAt:nowIso()}).catch(error=>console.warn("MILITOPO LIVE · vault organizador",error));
+        persistOrganizerTrackOnce(vaultKey,p.participantId,p.track,digest);
         if(typeof window.MILITOPO_LIVE_ATTACH_TRACK==="function")window.MILITOPO_LIVE_ATTACH_TRACK(p.participantId,p.track,{trackPointCount:p.trackPointCount,trackDigest:digest,live:true});
       }else hydrateOrganizerTrack(p);
     }else hydrateOrganizerTrack(p);
@@ -1363,6 +1378,7 @@ async function purgeOrganizerLocalEventData(eventId){
     organizerTrackVaultDeleteEvent(eventKey)
   ]);
   [...organizerTrackMemory.keys()].filter(key=>key.startsWith(`${eventKey}:`)).forEach(key=>organizerTrackMemory.delete(key));
+  [...organizerVaultWrites.keys()].filter(key=>key.startsWith(`${eventKey}:`)).forEach(key=>organizerVaultWrites.delete(key));
   [...organizerTrackHydrationBusy].filter(key=>String(key).startsWith(`${eventKey}:`)).forEach(key=>organizerTrackHydrationBusy.delete(key));
   if(organizerEventKey===eventKey){
     cleanupOrganizerRunListener();
@@ -1407,6 +1423,7 @@ async function deleteOrganizerRaceData(options={}){
       await organizerTrackVaultDeleteRun(eventKey,runId).catch(()=>{});
       try{localStorage.removeItem(`${AUTO_IMPORT_KEY_PREFIX}${eventKey}_${runId}`)}catch(_){ }
       [...organizerTrackMemory.keys()].filter(key=>key.startsWith(`${eventKey}:${runId}:`)).forEach(key=>organizerTrackMemory.delete(key));
+      [...organizerVaultWrites.keys()].filter(key=>key.startsWith(`${eventKey}:${runId}:`)).forEach(key=>organizerVaultWrites.delete(key));
     }
     try{localStorage.removeItem(ORGANIZER_RUN_KEY_PREFIX+eventKey)}catch(_){ }
     organizerLatestParticipantsValue={};organizerLatestRows=[];organizerAutoImportedCount=0;organizerAutoImportBusy.clear();
@@ -1561,12 +1578,13 @@ async function recoverOrganizerRunFromLocalDevice(ctx){
 
 function startOrganizerContextWatcher() {
   buildOrganizerPanel();
+  let lastContextSignature="";
   const tick=()=>{
     const ctx=organizerContext();
     if(ctx?.eventId)recoverOrganizerRunFromLocalDevice(ctx);
     if(ctx?.eventId&&currentUser&&db)bindOrganizerEvent(ctx);
-    if(organizerRunId)renderOrganizerParticipants(organizerLatestParticipantsValue);
-    else if(ctx?.eventId)renderOrganizerParticipants(organizerLatestParticipantsValue||{});
+    const signature=JSON.stringify(ctx||null);
+    if(signature!==lastContextSignature){lastContextSignature=signature;if(organizerRunId||ctx?.eventId)renderOrganizerParticipants(organizerLatestParticipantsValue||{});}
   };
   tick();
   organizerContextTimer=window.setInterval(tick,1800);
