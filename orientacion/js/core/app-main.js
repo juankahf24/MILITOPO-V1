@@ -3491,7 +3491,7 @@ function startFlowStatusForRoute(route){
     return {stage:"pending",cls:"pending",icon:"⏳",label:"Pendientes",hint:"Aún sin salida entregada"};
 }
 
-window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS=function(participantId,status,extra={}){
+window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS=function(participantId,status,extra={},deferUi=false){
     try{
         const route=getRouteByParticipant(String(participantId||""));
         if(!route)return false;
@@ -3501,7 +3501,6 @@ window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS=function(participantId,status,extra={
         const now=new Date().toISOString();
         const payload=extra&&typeof extra==="object"?extra:{};
         const liveResultReceived=payload.resultImported===true||!!String(payload.resultCode||"").trim();
-        window.MILITOPO_TOUCH_RACE_DATA?.({status:String(status||"active"),lastDataAt:now});
         let changed=false;
         if(status==="racing"){
             if(!current.startQrShownAt){current.startQrShownAt=now;changed=true;}
@@ -3521,21 +3520,15 @@ window.MILITOPO_LIVE_SYNC_STARTFLOW_STATUS=function(participantId,status,extra={
             if(nextCode && current.liveResultCode!==nextCode){current.liveResultCode=nextCode;changed=true;}
             if(!current.liveResultReceivedAt){current.liveResultReceivedAt=now;changed=true;}
         }
-        if(!changed)return true;
+        if(!changed)return deferUi?false:true;
         current.updatedAt=now;
         store[key]=current;
-        saveState();
-        renderStartFlowStatusPanel();
-        if(typeof updateOrganizerParticipantSelects==="function")updateOrganizerParticipantSelects({keepQr:true});
-        try{
-            if(typeof renderStep5RoutePicker==="function"){
-                renderStep5RoutePicker("start");
-                renderStep5RoutePicker("finish");
-            }
-        }catch(_){ }
+        if(!deferUi){saveState();updateOrganizerParticipantSelects({keepQr:true});}
         return true;
     }catch(_){return false;}
 };
+
+window.MILITOPO_LIVE_FLUSH_STARTFLOW_STATUS=function(){saveState();updateOrganizerParticipantSelects({keepQr:true});};
 
 function setFinishOrganizedPanelOpen(open){
     const panel=document.getElementById("finishOrganizedBlock");
@@ -3905,8 +3898,9 @@ function toggleStep5RoutePicker(kind){
     const picker=document.getElementById(meta.pickerId);
     if(!picker)return;
     const willOpen=!picker.classList.contains("open");
-    document.querySelectorAll(".step5-route-picker.open").forEach(el=>el.classList.remove("open"));
+    document.querySelectorAll(".step5-route-picker.open").forEach(el=>{el.classList.remove("open");if(el!==picker)renderStep5RoutePicker(el.id==="finishFlowParticipantPicker"?"finish":"start");});
     if(willOpen)picker.classList.add("open");
+    else renderStep5RoutePicker(kind);
 }
 
 function chooseStep5RouteFromPicker(kind,pid){
@@ -3925,6 +3919,8 @@ function renderStep5RoutePicker(kind){
     const sel=document.getElementById(meta.selectId);
     const picker=document.getElementById(meta.pickerId);
     if(!sel||!picker)return;
+    // No sustituir la lista mientras el usuario está desplazándose por ella.
+    if(picker.classList.contains("open"))return;
     const routes=state.routes||[];
     const selectedRoute=routes.find(r=>String(r.participantId)===String(sel.value))||routes[0]||null;
     picker.innerHTML="";
@@ -11154,7 +11150,8 @@ async function orientationGeoTiffDataUrlForBounds(bounds,width,height){if(!orien
   function analysisRankingMap(rs){const ordered=[...rs].sort((a,b)=>{const aa=adjustedResultMs(a),bb=adjustedResultMs(b),ar=Number.isFinite(aa)?aa:Infinity,br=Number.isFinite(bb)?bb:Infinity;const art=Math.max(0,(toMs(a.finishTime)||0)-(toMs(a.startTime)||0)),brt=Math.max(0,(toMs(b.finishTime)||0)-(toMs(b.startTime)||0));return (ar-br)||(art-brt)||participantLabel(a).localeCompare(participantLabel(b),'es',{numeric:true})});return new Map(ordered.map((r,i)=>[String(r.participantId||''),i+1]))}
   function fitAnalysisTrackParticipant(pid){const m=ensureAnalysisTrackMap();if(!m)return false;const r=analysisResults().find(x=>String(x.participantId||'')===String(pid||''));const pts=r?normalizedTrack(r):[];if(pts.length<2)return false;const b=L.latLngBounds(pts.map(q=>[q.lat,q.lng]));if(!b.isValid())return false;requestAnimationFrame(()=>setTimeout(()=>{m.invalidateSize();m.fitBounds(b.pad(.14),{padding:[24,24],maxZoom:19,animate:true})},60));return true}
   function renderAnalysisTracks(){const box=document.getElementById('raceAnalysisTracksSummary'),list=document.getElementById('raceAnalysisTrackParticipants');if(!list)return;const rawResults=analysisResults();const rankMap=analysisRankingMap(rawResults);const rs=[...rawResults].sort((a,b)=>{const ra=Number(rankMap.get(String(a.participantId||'')))||999999,rb=Number(rankMap.get(String(b.participantId||'')))||999999;if(ra!==rb)return ra-rb;const ta=adjustedResultMs(a),tb=adjustedResultMs(b);return (Number.isFinite(ta)?ta:Infinity)-(Number.isFinite(tb)?tb:Infinity)});const available=rs.filter(r=>normalizedTrack(r).length>1);for(const id of [...analysisTrackSelected])if(!available.some(r=>String(r.participantId||'')===id))analysisTrackSelected.delete(id);list.innerHTML=rs.map(r=>{const pts=normalizedTrack(r),pid=String(r.participantId||''),dist=trackDistanceM(r),selected=analysisTrackSelected.has(pid),selIndex=[...analysisTrackSelected].indexOf(pid),color=analysisTrackColors[Math.max(0,selIndex)%analysisTrackColors.length],route=String(r.routeId||r.routeCode||r.route||'Sin recorrido'),duration=pts.length>1?pts[pts.length-1].timestamp-pts[0].timestamp:null,rank=rankMap.get(pid)||'--',adjusted=adjustedResultMs(r);return `<label class="analysis-track-choice"><input data-analysis-track-id="${escapeHtml(pid)}" type="checkbox" ${selected?'checked':''} ${pts.length<2?'disabled':''} onchange="toggleAnalysisTrack(decodeURIComponent('${encodeURIComponent(pid)}'),this.checked)"><span class="analysis-track-swatch" style="background:${selected?color:'#777'}"></span><span class="analysis-track-choice-info"><strong><span class="analysis-track-rank">#${rank}</span> · ${escapeHtml(participantLabel(r))}</strong><em>Recorrido: ${escapeHtml(route)}</em><small class="analysis-track-adjusted">Tiempo ajustado: <b>${Number.isFinite(adjusted)?formatAnalysisMs(adjusted):'--'}</b></small><small>Distancia track: ${pts.length&&Number.isFinite(dist)?(dist/1000).toFixed(2)+' km':'--'}</small><small>Duración track: ${Number.isFinite(duration)?formatPlayback(duration):'--'}</small></span></label>`}).join('')||'<div class="status warn">No hay participantes con resultado.</div>';const selectionCount=document.getElementById('analysisTrackSelectionCount');if(selectionCount)selectionCount.textContent=analysisTrackSelected.size+' seleccionados';if(box){box.innerHTML='';box.style.display='none'}ensureAnalysisTrackMap();drawAnalysisTracks()}
-  window.MILITOPO_LIVE_ATTACH_TRACK=function(participantId,track,meta={}){try{if(!Array.isArray(track)||track.length<2)return false;ensureImportedResultsStore();const r=(state.importedResults||[]).find(x=>String(x.participantId||'')===String(participantId||''));if(!r)return false;r.track=track;r.gpsTrack=track;r.trackPointCount=Math.max(Number(meta.trackPointCount)||0,track.length);r.trackLiveUpdatedAt=new Date().toISOString();saveState();if(Number(currentAppStep)===7)renderAnalysisTracks();return true}catch(e){console.warn('No se pudo asociar el track en vivo',e);return false}};
+  const analysisAttachedTracks=new WeakMap();
+  window.MILITOPO_LIVE_ATTACH_TRACK=function(participantId,track,meta={}){try{if(!Array.isArray(track)||track.length<2)return false;ensureImportedResultsStore();const r=(state.importedResults||[]).find(x=>String(x.participantId||'')===String(participantId||''));if(!r)return false;const attached=analysisAttachedTracks.get(r),digest=String(meta.trackDigest||'');if(attached&&attached.track===r.track&&r.gpsTrack===r.track&&digest&&attached.digest===digest&&r.track.length===track.length)return true;r.track=track;r.gpsTrack=track;analysisAttachedTracks.set(r,{track,digest});r.trackPointCount=Math.max(Number(meta.trackPointCount)||0,track.length);r.trackLiveUpdatedAt=new Date().toISOString();saveState();if(Number(currentAppStep)===7)renderAnalysisTracks();return true}catch(e){console.warn('No se pudo asociar el track en vivo',e);return false}};
 
 
   // V37 · Fase 3B: análisis inteligente de navegación
