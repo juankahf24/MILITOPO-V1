@@ -82,6 +82,7 @@ let participantUnsubActive = null;
 let participantUnsubOwnRecord = null;
 let participantPresenceRef = null;
 let participantFlushBusy = false;
+let participantQueueRetryMs=1000;
 let participantMessageSource = null;
 let participantActiveRunAvailable = false;
 let participantLastImportNoticeKey = "";
@@ -103,6 +104,7 @@ const organizerVaultWrites = new Map();
 const organizerTrackHydrationBusy = new Set();
 let organizerSort = { key: "default", direction: "asc" };
 let participantStorageError = "";
+let participantQueueStorageError = "";
 
 const $ = id => document.getElementById(id);
 
@@ -1619,6 +1621,8 @@ async function trackOutboxPut(bundle){
       // Nunca permitimos que una escritura asíncrona antigua sustituya una
       // captura más completa que ya llegó a IndexedDB.
       const merged={...previous,...bundle};
+      // Cada escritura es una versión distinta, incluso si contiene los mismos puntos.
+      merged.queueRevision=`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,12)}`;
       if(previousCount>nextCount){merged.track=previous.track;merged.trackPointCount=previousCount;merged.trackDigest=String(previous.trackDigest||stableTrackDigest(previous.track));}
       merged.runId=String(bundle?.runId||previous?.runId||"");
       store.put(merged);
@@ -1651,6 +1655,30 @@ async function trackOutboxDelete(id){
   try{dbx.close()}catch(_){ }
   await refreshTrackOutboxCount();
 }
+// La comparación y el borrado se hacen en la misma transacción: un envío
+// confirmado no puede retirar otra captura que haya llegado mientras se subía.
+async function trackOutboxDeleteConfirmed(bundle){
+  const dbx=await trackOutboxOpen();let deleted=false,changed=false;
+  try{
+    await new Promise((resolve,reject)=>{
+      const tx=dbx.transaction(TRACK_OUTBOX_STORE,"readwrite"),store=tx.objectStore(TRACK_OUTBOX_STORE),req=store.get(bundle.id);
+      req.onsuccess=()=>{
+        const current=req.result;
+        if(!current)return;
+        const same=bundle.queueRevision
+          ? current.queueRevision===bundle.queueRevision
+          : !current.queueRevision&&Array.isArray(current.track)&&Array.isArray(bundle.track)&&current.track.length===bundle.track.length&&stableTrackDigest(current.track)===stableTrackDigest(bundle.track)&&String(current.clientTime||"")===String(bundle.clientTime||"");
+        if(same){store.delete(bundle.id);deleted=true;}else changed=true;
+      };
+      req.onerror=()=>reject(req.error||new Error("No se pudo comprobar el track pendiente"));
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error("No se pudo confirmar el track"));tx.onabort=()=>reject(tx.error||new Error("Se canceló la confirmación del track"));
+    });
+  }finally{try{dbx.close()}catch(_){}}
+  if(changed)trackOutboxFlushAgain=true;
+  await refreshTrackOutboxCount();
+  return deleted;
+}
+
 async function refreshTrackOutboxCount(){
   try{
     const rows=await trackOutboxGetAll();
@@ -1734,7 +1762,7 @@ async function flushTrackOutbox(){
         persistParticipantContext(participantContext);
       }
       const track=Array.isArray(bundle.track)?bundle.track:[];
-      if(!track.length){await trackOutboxDelete(bundle.id);continue;}
+      if(!track.length){participantStorageError="Hay un track pendiente vacío que requiere revisión";console.warn("MILITOPO LIVE · track pendiente vacío",bundle.id);continue;}
       const targetRunId=await resolveParticipantRunId(bundleEventKey,bundlePid,bundle.runId,{routeId:bundle.routeId,startTime:bundle.startTime});
       if(!targetRunId)continue;
       const pBase=participantPath(bundleEventKey,targetRunId,bundlePid);
@@ -1787,15 +1815,16 @@ async function flushTrackOutbox(){
         await update(ref(db,pBase),trackCompleteData);
         const ack=(await get(ref(db,pBase))).val();
         if(ack?.trackComplete!==true||Number(ack?.trackPointCount||0)!==track.length||String(ack?.trackDigest||"")!==trackDigest||Number(ack?.trackTransferReceivedChunks||0)!==totalChunks)throw new Error(`ACK de track incompleto: ${Number(ack?.trackPointCount||0)}/${track.length}`);
-        await trackOutboxDelete(bundle.id);
+        const removed=await trackOutboxDeleteConfirmed(bundle);
         participantExpectedTrackPointCount=Math.max(participantExpectedTrackPointCount,track.length);
-        participantTrackReceived=!!participantContext?.finishTime;
+        participantTrackReceived=removed&&!!bundle.finishTime&&!!participantContext?.finishTime&&track.length>=Math.max(0,Number(participantContext?.trackPointCount)||0);
         confirmParticipantSync();
         bindParticipantOwnRecord();
       }catch(error){
         const retryCount=Math.max(0,Number(bundle?.retryCount)||0)+1;
         const retryDelay=Math.min(120000,5000*Math.pow(2,Math.min(5,retryCount-1)));
-        try{await trackOutboxPut({...bundle,track,trackDigest,retryCount,nextRetryAt:Date.now()+retryDelay,lastError:String(error?.message||error),lastAttemptAt:nowIso()});}catch(storageError){participantStorageError=String(storageError?.message||storageError);}
+        // El original sigue en la cola. No reescribirlo desde una copia antigua.
+        setTimeout(()=>flushTrackOutbox(),retryDelay);
         console.warn("MILITOPO LIVE · track pendiente en IndexedDB",error);
         break;
       }
@@ -1819,9 +1848,11 @@ function readQueue() {
 }
 function writeQueue(queue) {
   try {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify((Array.isArray(queue) ? queue : []).slice(-1200)));
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(Array.isArray(queue) ? queue : []));
+    participantQueueStorageError="";
     return true;
   } catch (error) {
+    participantQueueStorageError=String(error?.message||"No se pudo guardar la cola de eventos");
     console.warn("MILITOPO LIVE · no se pudo guardar la cola local", error);
     return false;
   }
@@ -1829,8 +1860,7 @@ function writeQueue(queue) {
 function removeQueuedEventById(eventId) {
   const latest = readQueue();
   const next = latest.filter(item => String(item?.id || "") !== String(eventId || ""));
-  writeQueue(next);
-  return next;
+  return writeQueue(next);
 }
 function participantPendingQueueSummary() {
   if (!participantContext) return { total:0, controls:0, result:false, start:false };
@@ -1852,9 +1882,9 @@ function participantSyncSnapshot() {
   const pendingTrack=Math.max(0,Number(participantPendingTrackCount)||0);
   const pending = summary.total+pendingTrack;
   const finishedLocally=!!participantContext?.finishTime;
-  const extra = { pending, pendingEvents:summary.total, pendingTrack, pendingControls:summary.controls, pendingResult:summary.result||(finishedLocally&&!participantResultReceived), pendingStart:summary.start, resultReceived:participantResultReceived, trackReceived:participantTrackReceived, expectedTrackPointCount:participantExpectedTrackPointCount, storageError:participantStorageError };
+  const extra = { pending, pendingEvents:summary.total, pendingTrack, pendingControls:summary.controls, pendingResult:summary.result||(finishedLocally&&!participantResultReceived), pendingStart:summary.start, resultReceived:participantResultReceived, trackReceived:participantTrackReceived, expectedTrackPointCount:participantExpectedTrackPointCount, storageError:participantQueueStorageError||participantStorageError };
   const lastSyncAt = loadParticipantLastSync() || "";
-  if(participantStorageError)return {state:"error",text:"🔴 ERROR AL GUARDAR EL TRACK · NO BORRES LA CARRERA",lastSyncAt,...extra};
+  if(participantQueueStorageError||participantStorageError)return {state:"error",text:"🔴 ERROR DE ALMACENAMIENTO · NO BORRES LA CARRERA",lastSyncAt,...extra};
   if (!firebaseConnected || !db || !currentUser) {
     return { state:"offline", text:"🟠 SIN COBERTURA · GUARDADO EN EL MÓVIL", lastSyncAt, ...extra };
   }
@@ -2198,6 +2228,7 @@ async function flushParticipantQueue() {
     bindParticipantOwnRecord();
   }
   participantFlushBusy = true;
+  let queueFailed=false;
   publishParticipantSyncStatus();
   try {
     while (true) {
@@ -2208,9 +2239,11 @@ async function flushParticipantQueue() {
       if (!event) break;
       try {
         await applyParticipantEvent(event);
-        removeQueuedEventById(event.id);
+        if(!removeQueuedEventById(event.id))throw new Error("No se pudo actualizar la cola local");
+        participantQueueRetryMs=1000;
         publishParticipantSyncStatus();
       } catch (error) {
+        queueFailed=true;
         console.warn("MILITOPO LIVE · evento pendiente", error);
         publishParticipantSyncStatus();
         break;
@@ -2222,7 +2255,9 @@ async function flushParticipantQueue() {
     // Cubre la llegada de mensajes justo entre la última lectura y la liberación del bloqueo.
     const remaining = participantPendingQueueCount();
     if (remaining > 0 && firebaseConnected && db && currentUser && participantRunId && participantContext) {
-      setTimeout(() => flushParticipantQueue(), 0);
+      const delay=queueFailed?participantQueueRetryMs:0;
+      if(queueFailed)participantQueueRetryMs=Math.min(30000,participantQueueRetryMs*2);
+      setTimeout(() => flushParticipantQueue(), delay);
     }
   }
 }
