@@ -1,7 +1,7 @@
 /* MILITOPO Orientación · cargador modular seguro fase 2
    No contiene lógica de la app: carga los bloques en orden clásico para mantener compatibilidad. */
 (function(){
-  var VERSION = "v79-live-selector-20261027";
+  var VERSION = "v80-proteccion-datos-20261027";
   var files = [
     "js/config/iof-symbols-baked.js",
     "js/core/app-main.js",
